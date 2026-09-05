@@ -1,0 +1,10 @@
+[
+  { "role": "user", "parts": [{ "type": "text", "text": "Find where password resets expire." }] },
+  { "role": "model", "parts": [{ "type": "toolCall", "id": "search_1", "tool": "search", "args": { "query": "expires" } }] },
+  { "role": "tool", "parts": [{ "type": "toolResult", "callId": "search_1", "content": [{ "type": "object", "data": { "matches": [
+    { "path": "auth/reset.ts", "line": 12, "text": "const expiresAt = now + 15 * MINUTE;" },
+    { "path": "cache/image.ts", "line": 8, "text": "const expiresAt = now + DAY;" },
+    { "path": "auth/verify-reset.ts", "line": 31, "text": "if (token.expiresAt <= now) throw new ExpiredToken();" },
+    { "path": "billing/quote.ts", "line": 19, "text": "const expiresAt = now + WEEK;" }
+  ] } }] }] }
+]

@@ -1,0 +1,8 @@
+const memory = {
+  role: "model",
+  parts: [{
+    type: "text",
+    text: "Current task, consolidated by the agent from the user's requests: export invoices as JSON with invoice_id and total_cents, sorted by invoice_id. JSON supersedes the earlier CSV request. Implementation is still pending.",
+  }],
+};
+return [memory];

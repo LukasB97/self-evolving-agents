@@ -1,0 +1,4 @@
+[
+  { "role": "user", "parts": [{ "type": "text", "text": "Make retries exponential. Never retry HTTP 401." }] },
+  { "role": "model", "parts": [{ "type": "text", "text": "I will introduce exponential backoff so each retry waits longer than the previous one. This helps avoid repeatedly hitting a struggling service. HTTP 401 indicates an authentication problem, so retrying it would not resolve the cause. I will use delays of 1, 2, and 4 seconds, with three retries at most, and immediately return any HTTP 401 response." }] }
+]

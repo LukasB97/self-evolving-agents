@@ -1,0 +1,5 @@
+[
+  { "role": "user", "parts": [{ "type": "text", "text": "Export the invoices as CSV. Include invoice_id and total_cents." }] },
+  { "role": "model", "parts": [{ "type": "text", "text": "I will prepare a CSV export with those two columns." }] },
+  { "role": "user", "parts": [{ "type": "text", "text": "Actually use JSON. Keep those fields, and sort by invoice_id." }] }
+]
