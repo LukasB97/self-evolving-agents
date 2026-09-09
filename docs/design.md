@@ -16,7 +16,7 @@ The intended provider adapter maps supported messages and parts into the format 
 
 This repo does not establish a universal bijection across provider APIs. A real adapter must test roundtrips and handle provider-only metadata. Opaque reasoning payloads are outside this prototype's type set. Extending it requires explicit replay rules; silently dropping them would violate the premise.
 
-[buildSystemSuffix](../src/build-system-suffix.ts) combines the actual types with the declaration of agent-owned state. No duplicate hand-maintained type listing is needed. Whether models can reliably address exact array indices from a provider's presentation is an evaluation question; additional addressing hints can be compared experimentally.
+[buildSystemSuffix](../src/build-system-suffix.ts) returns the original system suffix, including its State declaration, with the tool renamed to `evolve`. Whether models can reliably address exact array indices from a provider's presentation is an evaluation question; additional addressing hints can be compared experimentally.
 
 ## Mutation boundary
 

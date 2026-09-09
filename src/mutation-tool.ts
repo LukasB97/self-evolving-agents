@@ -1,40 +1,62 @@
+export const evolveToolDescription = `Rewrite your current memory into a better state for future work.
+
+Memory is limited, and unnecessary context consumes tokens and can reduce the quality of future work. This tool lets you manage your memory directly.
+
+It executes the JavaScript in \`code\` against the structured \`State\` corresponding to the memory you currently see. The returned state becomes your new memory. You can make changes as small as editing one part or as large as restructuring most of the state.
+
+Changing memory has a Compaction Cost. Prompt caching survives only through the longest unchanged prefix, so Compaction Cost is the number of tokens in the resulting memory that are no longer cached.
+
+The code runs in an isolated environment with limited time and memory and no external access. Invalid states, broken tool-call relationships, execution failures, and resource-limit violations are rejected.`;
+
 export type EvolveInput = {
   /**
-   * JavaScript function body executed as evolve(state: State): State.
-   * The array is the structured form of your current memory, including this call last.
-   * Keep, remove, edit, move, merge, or add earlier messages and parts.
-   * Preserve the final mutation-call message exactly; the harness adds its result.
-   * Return the resulting array. Execution is synchronous, with no external access.
+   * JavaScript executed as the body of:
    *
-   * Compaction Cost is the resulting input tokens beyond the unchanged cached prefix.
-   * Under ideal prefix reuse: resultingTokens - unchangedPrefixTokens.
-   * Earlier edits can force more of the next input to be processed again.
-   * Preserve exact content when a change offers too little benefit for that cost.
+   *   function evolve(state: State): State
+   *
+   * `state` is the structured representation of your current memory.
+   * The returned State replaces your current memory.
+   *
+   * You may keep, remove, edit, move, merge, or add messages and parts.
+   *
+   * Compaction Cost is the number of tokens in the resulting memory that
+   * cannot reuse the current prompt cache.
+   *
+   * The cache is preserved only through the longest exact prefix shared by
+   * the current and resulting memory:
+   *
+   *   Compaction Cost =
+   *     resultingMemoryTokens - unchangedPrefixTokens
+   *
+   * Changes near the beginning can therefore have a much higher cost than
+   * changes near the end.
+   *
+   * Preserve existing content exactly when changing it provides too little
+   * benefit to justify its Compaction Cost.
    */
   code: string;
 };
 
+export type EvolveOutput =
+  | {
+      applied: true;
+      beforeTokens: number;
+      afterTokens: number;
+      cachedPrefixTokens: number;
+      compactionCost: number;
+    }
+  | {
+      applied: false;
+      error: string;
+    };
+
 export const evolveTool = {
   name: "evolve",
-  description: `Rewrite your current memory into a better state for future work.
-
-Memory is limited. Unnecessary context consumes tokens and can make future work harder.
-This tool executes JavaScript against the structured State corresponding to the memory
-you see. The returned state replaces your working memory; the user-visible transcript
-is kept separately. You may annotate content as well as condense or reorganize it.
-
-Changes have a Compaction Cost: under exact-prefix caching, tokens after the first
-change cannot reuse that prior prefix. Balance future context quality with this cost.
-Code runs synchronously in isolated QuickJS with time, memory, and output limits.
-Invalid states, broken tool roundtrips, and edits to the final mutation call are rejected.
-On failure the previous state is preserved and receives an error result.`,
+  description: evolveToolDescription,
   inputSchema: {
     type: "object",
     properties: {
-      code: {
-        type: "string",
-        description: "Body of evolve(state): State. Edit earlier memory; preserve this final call. Return the array. Compaction Cost = resulting input tokens minus reusable exact-prefix tokens; preserve existing text when rewriting offers too little benefit.",
-      },
+      code: { type: "string", description: "JavaScript executed as the body of:\n\n  function evolve(state: State): State\n\n`state` is the structured representation of your current memory.\nThe returned State replaces your current memory.\n\nYou may keep, remove, edit, move, merge, or add messages and parts.\n\nCompaction Cost is the number of tokens in the resulting memory that\ncannot reuse the current prompt cache.\n\nThe cache is preserved only through the longest exact prefix shared by\nthe current and resulting memory:\n\n  Compaction Cost =\n    resultingMemoryTokens - unchangedPrefixTokens\n\nChanges near the beginning can therefore have a much higher cost than\nchanges near the end.\n\nPreserve existing content exactly when changing it provides too little\nbenefit to justify its Compaction Cost." },
     },
     required: ["code"],
     additionalProperties: false,

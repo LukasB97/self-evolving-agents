@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="592" height="495" viewBox="0 0 592 495" role="img" aria-labelledby="title desc">
+<title id="title">Start of iteration 3</title>
+<desc id="desc">The generalization joins the first result, the third result joins the foundation, and the next step is updated.</desc>
+<rect width="592" height="495" fill="white"/>
+<g font-family="Arial, Helvetica, sans-serif" fill="#24333b">
+<text x="40" y="33" font-size="21" font-weight="500">Start of iteration 3</text>
+<text x="56" y="68" font-size="13" fill="#61717a">Start of context</text>
+<rect x="56" y="86" width="496" height="36" fill="#e4e9ec"/>
+<text x="72" y="110" font-size="17" >The problem</text>
+<rect x="56" y="125" width="496" height="52" fill="#def0eb"/>
+<text x="72" y="157" font-size="17" >First result + generalization + proofs</text>
+<rect x="56" y="180" width="496" height="44" fill="#def0eb"/>
+<text x="72" y="208" font-size="17" >Second result + proof</text>
+<rect x="56" y="227" width="496" height="44" fill="#def0eb"/>
+<text x="72" y="255" font-size="17" >Third result + proof</text>
+<rect x="56" y="274" width="496" height="36" fill="#f1f3f4"/>
+<text x="72" y="298" font-size="17" >Failed routes + why they fail</text>
+<rect x="56" y="313" width="496" height="44" fill="#f1f3f4"/>
+<text x="72" y="341" font-size="17" >Next: connect the results to the problem</text>
+<path d="M56 382H174 M410 382H552" stroke="#c7d0d4"/>
+<text x="292" y="387" font-size="13" text-anchor="middle" fill="#61717a">End of second compaction</text>
+<path d="M37 86V400m-4 -5 4 5 4 -5" fill="none" stroke="#c7d0d4"/>
+<rect x="56" y="407" width="496" height="72" rx="3" fill="white" stroke="#c7d0d4"/>
+<text x="72" y="435" font-size="17" font-weight="500">Iteration 3 begins here</text>
+<text x="72" y="459" font-size="14" fill="#61717a">Room for new exploration</text>
+</g>
+</svg>

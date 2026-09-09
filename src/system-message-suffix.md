@@ -1,12 +1,61 @@
 What follows is your state.
 You manage it yourself.
-It is not necessarily the literal conversation the user sees.
+It is not the literal conversation the user sees.
 
-Its messages and parts map bijectively to the State type defined above.
-The order and contents of that State correspond to the memory you see.
+It is bijectively serializable through:
 
-Use evolve to transform this state. You can preserve, edit, remove,
-reorder, merge, or add earlier messages and parts, including your own notes.
-Preserve the final mutation-call message; the harness adds its result after execution.
+```ts
+type TextPart = {
+  type: "text";
+  text: string;
+};
 
-Maximize the quality of the resulting context while minimizing Compaction Cost.
+type ObjectPart = {
+  type: "object";
+  data: Record<string, unknown>;
+};
+
+type FilePart = {
+  type: "file";
+  data: string;
+  mimeType: string;
+};
+
+type ToolCallPart = {
+  type: "toolCall";
+  id: string;
+  tool: string;
+  args: unknown;
+};
+
+type ToolResultContentPart =
+  | TextPart
+  | ObjectPart
+  | FilePart;
+
+type ToolResultPart = {
+  type: "toolResult";
+  callId: string;
+  content: ToolResultContentPart[];
+};
+
+type Message =
+  | {
+      role: "user";
+      parts: (TextPart | FilePart)[];
+    }
+  | {
+      role: "model";
+      parts: (TextPart | FilePart | ToolCallPart)[];
+    }
+  | {
+      role: "tool";
+      parts: ToolResultPart[];
+    };
+
+type State = Message[];
+```
+
+The order and contents of this State correspond to the memory you see.
+You can manage this state with the `evolve` tool.
+When mutating your state, maximize the quality of the resulting context while minimizing **Compaction Cost**.
