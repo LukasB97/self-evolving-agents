@@ -1,12 +1,12 @@
 # Self-Evolving Agents
 
-**A compaction algorithm for agents that manage their own memory**
+**A compaction mechanism for agents that manage their own memory**
 
 Lukas Brückner · Concept paper and reference implementation
 
 ## Abstract
 
-We propose a compaction algorithm in which an agent writes a function that transforms its current context. The function operates on the existing messages and their parts, allowing the agent to preserve content exactly, edit individual results, and reorganize larger sections. The agent decides when to compact and what to change, balancing the quality of the resulting context against the cost of generating edits and invalidating its prompt cache. Reinforcement learning could train these decisions through their effects on subsequent work. Repeated compactions could then develop a lasting body of knowledge, working practices, and an emerging identity within the agent's memory. This paper describes the algorithm, illustrates its use, and identifies what needs to be evaluated. The repository provides a reference implementation of the execution mechanism.
+We propose a compaction mechanism in which an agent writes a function that transforms its current context. The function operates on the existing messages and their parts, allowing the agent to preserve content exactly, edit individual results, and reorganize larger sections. The agent decides when to compact and what to change, balancing the quality of the resulting context against the cost of generating edits and invalidating its prompt cache. We propose training these decisions with reinforcement learning through their effects on subsequent work. Across a long-running task, repeated compactions let the agent develop a lasting body of knowledge, working practices, and an emerging identity within its memory. This paper describes the mechanism, illustrates its use, and identifies what needs to be evaluated. The repository provides a reference implementation of the execution mechanism.
 
 ## 1. The compaction action is a function
 
@@ -51,7 +51,7 @@ type State = Message[];
 
 The provider renders this structured state into the context presented to the model. The model sees that rendering, rather than the State JSON itself. For the supported state, the required relationship is a **bijection**: a unique, reversible correspondence between the structured state and its model-visible representation, preserving both content and message-part structure.
 
-Using the rendered context and the type definitions, the model must infer which messages and parts in `State` correspond to what it sees. It can then write edits against that structure without first outputting a reconstructed JSON copy. Provider integrations must establish this correspondence and test whether the model can use it reliably; the [design notes](docs/design.md) discuss the integration requirements.
+Using the rendered context and the type definitions, the model can locate messages and parts by their contents and structure. Its function can use `find`, `filter`, regular expressions, tool-call relationships, and neighboring text as anchors, without knowing their array indices or first outputting a reconstructed JSON copy. Provider integrations must establish this correspondence and test whether the model can use it reliably; the [design notes](docs/design.md) discuss the integration requirements.
 
 The compaction action can now be expressed as a function over this existing memory. The agent calls `evolve` with JavaScript executed as the body of:
 
@@ -61,26 +61,42 @@ function evolve(state: State): State
 
 The harness runs the function on a copy of its actual current state, validates the returned state, and adopts it as the context for continued generation. If the transformation fails, it keeps the prior state. The model generates the changes and any new content; retained material comes directly from the existing state.
 
+The harness constrains execution and structural validity, not the contents or organization the agent chooses for its memory.
+
 ## 2. Compaction within a single tool result
 
 Suppose a search returns four code matches about expiry. Two concern password resets; the others concern image caching and billing. The agent wants to keep the password-reset evidence exactly, including the source text, paths, and line numbers.
 
-It can select those existing records and add a note in the same tool result:
+It can locate the result by its structure, select records by their contents, and add a note in the same tool result:
 
 ```js
-const result = state[2].parts[0];
-const matches = result.content[0].data.matches;
+const result = state
+  .flatMap(message => message.parts)
+  .find(part =>
+    part.type === "toolResult" &&
+    part.content.some(item =>
+      item.type === "object" && Array.isArray(item.data.matches)
+    )
+  );
 
-result.content[0].data.matches = [matches[0], matches[2]];
+const evidence = result.content.find(
+  item => item.type === "object" && Array.isArray(item.data.matches)
+);
+
+evidence.data.matches = evidence.data.matches.filter(
+  match => /^auth\/.*reset\.ts$/.test(match.path)
+);
+
 result.content.push({
   type: "text",
-  text: "Memory edit by the agent: retained 2 of 4 matches verbatim. " +
-        "Removed image-cache and billing expiry matches as unrelated to password resets."
+  text: "Agent memory edit: kept 2/4 password-reset matches verbatim."
 });
 return state;
 ```
 
 The retained records come directly from the existing state. Everything outside the edit stays intact, and the note identifies the selection as the agent's own intervention. The [runnable example](examples/02-annotated-evidence/) includes the input and output states. The same operation can select a small amount of evidence from a much larger response.
+
+The same approach can locate parts through surrounding content—for example, the first image following a recognized passage—even when their array positions are unknown.
 
 This control extends to every supported level of the representation. The agent can shorten a verbose explanation while keeping the user's original request, combine related information from several messages, or reorganize most of its context. Code supplies operations for finding and transforming existing data as well as inserting new text. The compaction can be as local or as extensive as the agent judges useful.
 
@@ -90,19 +106,25 @@ This control extends to every supported level of the representation. The agent c
 
 The aim is to maximize the quality of the resulting context while minimizing the cost of the compaction. That cost depends partly on where the agent edits. Under exact-prefix prompt caching, an unchanged beginning can be reused on the next call. Changing an early part can invalidate reuse of everything after it, even when the later content itself remains identical.
 
-The interface defines **Compaction Cost** as the number of tokens in the resulting input that fall outside the reusable prefix:
+Compaction has two immediate token costs: generating the `evolve` tool call and processing the part of the resulting input that cannot reuse the prompt cache. The cache component is:
 
 ```text
-Compaction Cost = resultingInputTokens - reusablePrefixTokens
+Cache Cost = resultingInputTokens - reusablePrefixTokens
+
+Compaction Cost = evolveCallTokens + Cache Cost
 ```
 
-This prefix must be measured over the complete serialized model input, including system instructions and tool definitions. The [cost helper](src/cache-cost.ts) computes the longest identical prefix of supplied token sequences; actual cache hits also depend on provider serialization and cache availability.
+The reusable prefix must be measured over the complete serialized model input, including system instructions and tool definitions. The [cost helper](src/cache-cost.ts) computes this cache component from the longest identical prefix of supplied token sequences; actual cache hits also depend on provider serialization and cache availability.
 
-A small edit near the end can therefore have a different cost from a change near the beginning. A larger reorganization might still repay its cost through better subsequent work. Preserving content directly also saves the output tokens that would otherwise be needed to reproduce it. These effects make the timing and extent of compaction decisions that should be evaluated together.
+A small edit near the end can therefore have a different cost from a change near the beginning. A larger reorganization might still repay its cost through better subsequent work. Preserving content directly also saves the output tokens that would otherwise be needed to reproduce it. These effects mean that the timing and extent of compaction should be evaluated together.
 
-Reinforcement learning could train the agent to make those decisions using feedback from continued work. The objective would account for task performance and total resource use, including generated edit code and actual cache costs. We do not yet know what schedule or style of compaction would work best. A learned policy might make frequent small edits, compact larger sections occasionally, or combine both. The policy chooses the action for the current context each time; the generated code executes that action.
+Position is therefore part of the memory policy. Material near the beginning is expensive to revise and should become increasingly stable, while ongoing work remains nearer the end. The agent must learn when knowledge is established enough to move forward and when revising earlier memory is worth losing cache reuse.
+
+Reinforcement learning trains these decisions from their effects on continued work. The objective combines task completion with total resource use, including Compaction Cost and subsequent inference. The action remains a general JavaScript transformation rather than a fixed set of edit operations or a prescribed memory schema. Strategies for selecting, organizing, annotating, and revising memory are learned through what succeeds across the task. The policy may make frequent small edits, compact larger sections occasionally, or combine both.
 
 ## 4. What repeated compaction can develop
+
+The intended setting is one agent continuing the same task across many compactions, potentially for hours or days. Each compaction changes the memory from which it interprets later observations and chooses later actions. Further experience then changes the basis of the next compaction. This repeated feedback, rather than a single act of compression, is what allows the agent to develop.
 
 Consider an agent working on a mathematical problem. It explores approaches, makes calculations, tests conjectures, and proves results. At first, the proved results are scattered among the attempts that produced them.
 
@@ -120,13 +142,13 @@ The next compaction incorporates the generalization into the first result, place
 
 Over these cycles, the agent has developed a foundation from its own work. This can include lessons about its methods as well as mathematical results. After several failed proof attempts, it might learn to search for counterexamples earlier and carry that practice into its next attempt.
 
-The agent's identity can develop through this accumulated experience: what it knows, how it works, and what it has learned about its own abilities and mistakes. Keeping such lessons in memory gives them a role in subsequent decisions. Further experience can strengthen or revise them. This development takes place in the agent's context while its model weights remain fixed.
+The agent's identity develops through this accumulated experience: what it knows, how it works, and what it has learned about its own abilities and mistakes. Each compaction changes the state that guides its subsequent decisions, while further experience can strengthen or revise it. This is the sense in which the agent is self-evolving: it learns through changes to its own persistent working memory while its model weights remain fixed.
 
-## 5. Evaluating the algorithm
+## 5. Evaluating the mechanism
 
-The execution mechanism makes these edits possible. The research question is whether an agent can choose edits that improve its work at a worthwhile total cost.
+The execution mechanism makes these edits possible. The research question is whether an agent can learn a sequence of compactions that improves task completion across long tasks at a worthwhile total cost.
 
-Compare executable compaction with existing compaction methods using the same model, tasks, tools, context limit, and inference budget. An organized summary should be allowed to build the same kind of foundation shown above. A comparison with a fixed set of structured edit operations would test how much the expressiveness of JavaScript contributes.
+Compare the proposed mechanism with existing compaction methods using the same model, tasks, tools, context limit, and inference budget. An organized summary should be allowed to build the same kind of foundation shown above. A comparison with a fixed set of structured edit operations would test how much the expressiveness of JavaScript contributes.
 
 Tasks should make earlier evidence, corrections, and learned practices matter across several compactions. Measure task success, exact constraint and evidence preservation, repeated mistakes, tokens, latency, and actual cache use. For a learned policy, report training resources separately. A shorter context is useful only insofar as it supports the work and its resource budget.
 

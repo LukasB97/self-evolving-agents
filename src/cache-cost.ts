@@ -2,7 +2,7 @@ export type CacheCost = {
   beforeTokens: number;
   afterTokens: number;
   reusablePrefixTokens: number;
-  compactionCost: number;
+  cacheCost: number;
 };
 
 /** Ideal exact-prefix model. Supply tokens of the complete serialized model input. */
@@ -13,6 +13,6 @@ export function estimateCacheCost(before: readonly number[], after: readonly num
     beforeTokens: before.length,
     afterTokens: after.length,
     reusablePrefixTokens: prefix,
-    compactionCost: after.length - prefix,
+    cacheCost: after.length - prefix,
   };
 }

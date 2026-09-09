@@ -16,7 +16,7 @@ The intended provider adapter maps supported messages and parts into the format 
 
 This repo does not establish a universal bijection across provider APIs. A real adapter must test roundtrips and handle provider-only metadata. Opaque reasoning payloads are outside this prototype's type set. Extending it requires explicit replay rules; silently dropping them would violate the premise.
 
-[buildSystemSuffix](../src/build-system-suffix.ts) returns the original system suffix, including its State declaration, with the tool renamed to `evolve`. Whether models can reliably address exact array indices from a provider's presentation is an evaluation question; additional addressing hints can be compared experimentally.
+[buildSystemSuffix](../src/build-system-suffix.ts) returns the original system suffix, including its State declaration, with the tool renamed to `evolve`. Whether models can reliably locate State values through content and structure from a provider's presentation is an evaluation question; different addressing strategies can be compared experimentally.
 
 ## Mutation boundary
 
@@ -47,10 +47,11 @@ The interpreter boundary is not an OS process boundary. Guest limits do not prov
 
 ## Cache accounting
 
-The intended objective balances future context quality with resource cost. The exact-prefix model uses:
+The intended objective balances future context quality with resource cost. The exact-prefix model separates generated tool-call tokens from the cache cost of the resulting input:
 
 ```text
-compactionCost = afterTokens - reusablePrefixTokens
+cacheCost = afterTokens - reusablePrefixTokens
+compactionCost = evolveCallTokens + cacheCost
 ```
 
 [estimateCacheCost](../src/cache-cost.ts) compares two token arrays and counts the longest identical prefix. The supplied sequences must describe complete serialized model inputs, including stable system/tool material and the mutation receipt where applicable. Comparing only `JSON.stringify(state)` would not measure provider prompt caching.

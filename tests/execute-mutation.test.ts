@@ -89,7 +89,7 @@ test("previous mutation roundtrips can be removed together", async () => {
 });
 
 test("prefix model distinguishes early edits, truncation, and appends", () => {
-  assert.deepEqual(estimateCacheCost([1, 2, 3], [1, 9, 3]), { beforeTokens: 3, afterTokens: 3, reusablePrefixTokens: 1, compactionCost: 2 });
-  assert.equal(estimateCacheCost([1, 2, 3], [1, 2]).compactionCost, 0);
-  assert.equal(estimateCacheCost([1], [1, 2]).compactionCost, 1);
+  assert.deepEqual(estimateCacheCost([1, 2, 3], [1, 9, 3]), { beforeTokens: 3, afterTokens: 3, reusablePrefixTokens: 1, cacheCost: 2 });
+  assert.equal(estimateCacheCost([1, 2, 3], [1, 2]).cacheCost, 0);
+  assert.equal(estimateCacheCost([1], [1, 2]).cacheCost, 1);
 });
