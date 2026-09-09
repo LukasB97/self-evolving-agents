@@ -59,7 +59,7 @@ test("does not expose host IO", async () => {
 });
 
 function boundary(code: string): State {
-  return [...state(), { role: "model", parts: [{ type: "toolCall", id: "mutation_1", tool: "compact_memory", args: { code } }] }];
+  return [...state(), { role: "model", parts: [{ type: "toolCall", id: "mutation_1", tool: "evolve", args: { code } }] }];
 }
 
 test("boundary commits earlier edits and appends a matching receipt", async () => {
@@ -82,7 +82,7 @@ test("boundary rejects deletion of its own call and preserves earlier memory", a
 
 test("previous mutation roundtrips can be removed together", async () => {
   const first = await applyMemoryMutation(boundary("return state;"));
-  first.state.push({ role: "model", parts: [{ type: "toolCall", id: "mutation_2", tool: "compact_memory", args: { code: "return [state[0], state.at(-1)];" } }] });
+  first.state.push({ role: "model", parts: [{ type: "toolCall", id: "mutation_2", tool: "evolve", args: { code: "return [state[0], state.at(-1)];" } }] });
   const second = await applyMemoryMutation(first.state);
   assert.equal(second.result.applied, true);
   assert.equal(second.state.length, 3);

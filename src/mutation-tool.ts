@@ -1,6 +1,6 @@
-export type CompactMemoryInput = {
+export type EvolveInput = {
   /**
-   * JavaScript function body executed as compact(state: State): State.
+   * JavaScript function body executed as evolve(state: State): State.
    * The array is the structured form of your current memory, including this call last.
    * Keep, remove, edit, move, merge, or add earlier messages and parts.
    * Preserve the final mutation-call message exactly; the harness adds its result.
@@ -14,8 +14,8 @@ export type CompactMemoryInput = {
   code: string;
 };
 
-export const compactMemoryTool = {
-  name: "compact_memory",
+export const evolveTool = {
+  name: "evolve",
   description: `Rewrite your current memory into a better state for future work.
 
 Memory is limited. Unnecessary context consumes tokens and can make future work harder.
@@ -33,7 +33,7 @@ On failure the previous state is preserved and receives an error result.`,
     properties: {
       code: {
         type: "string",
-        description: "Body of compact(state): State. Edit earlier memory; preserve this final call. Return the array. Compaction Cost = resulting input tokens minus reusable exact-prefix tokens; preserve existing text when rewriting offers too little benefit.",
+        description: "Body of evolve(state): State. Edit earlier memory; preserve this final call. Return the array. Compaction Cost = resulting input tokens minus reusable exact-prefix tokens; preserve existing text when rewriting offers too little benefit.",
       },
     },
     required: ["code"],

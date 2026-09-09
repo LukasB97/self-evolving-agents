@@ -1,4 +1,4 @@
-# Self-Mutating Agents
+# Self-Evolving Agents
 
 ### Context as Agent-Owned State
 
@@ -8,7 +8,7 @@ In an append-only harness, that state grows in the order events happened. The ag
 
 **What if the agent could directly edit the state it is working from?**
 
-Self-Mutating Agents gives it a small interface: write a JavaScript function that receives the current structured state and returns its replacement. The agent can keep a user's exact words, shorten its own explanation, select evidence, add commentary, merge exchanges, or rearrange information. The user-visible conversation remains a separate record.
+Self-Evolving Agents gives it a small interface: write a JavaScript function that receives the current structured state and returns its replacement. The agent can keep a user's exact words, shorten its own explanation, select evidence, add commentary, merge exchanges, or rearrange information. The user-visible conversation remains a separate record.
 
 Compaction becomes one use of ordinary state management. The agent can also improve the arrangement of its memory while there is still room in the context window.
 
@@ -18,10 +18,10 @@ Compaction becomes one use of ordinary state management. The agent can also impr
 
 The memory presented to the model has a structured representation, `State = Message[]`. Each message contains typed parts. An adapter connects this representation to the model's input format, preserving supported content in both directions.
 
-The system suffix tells the model that the context it sees is this state and that it manages it itself. The model calls `compact_memory` with the body of a JavaScript function:
+The system suffix tells the model that the context it sees is this state and that it manages it itself. The model calls `evolve` with the body of a JavaScript function:
 
 ```js
-// Body of compact(state): State
+// Body of evolve(state): State
 state[1].parts[0].text = "Plan: retry after 1, 2, and 4 seconds; return HTTP 401 immediately.";
 return state;
 ```

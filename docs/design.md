@@ -23,7 +23,7 @@ This repo does not establish a universal bijection across provider APIs. A real 
 The live integration entry point is [applyMemoryMutation](../src/apply-mutation.ts).
 
 1. Complete outstanding ordinary tools and append their results.
-2. Receive a standalone `compact_memory` call and append it as the last model message.
+2. Receive a standalone `evolve` call and append it as the last model message.
 3. Pass this full state, including that call, to the executor.
 4. Validate the returned state and require the final call message to remain exact.
 5. Append a success result to the replacement state, or an error result to the original state.

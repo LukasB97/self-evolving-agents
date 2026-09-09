@@ -11,8 +11,8 @@ export async function applyMemoryMutation(state: State, options: MutationOptions
   const snapshot = structuredClone(state);
   const last = snapshot.at(-1);
   const part = last?.parts[0];
-  if (last?.role !== "model" || last.parts.length !== 1 || part?.type !== "toolCall" || part.tool !== "compact_memory") {
-    throw new Error("Mutation boundary requires a standalone compact_memory call last");
+  if (last?.role !== "model" || last.parts.length !== 1 || part?.type !== "toolCall" || part.tool !== "evolve") {
+    throw new Error("Mutation boundary requires a standalone evolve call last");
   }
   const call = part as ToolCallPart;
   validateState(snapshot, call.id);

@@ -1,12 +1,12 @@
 cff-version: 1.2.0
 message: "Please cite this research proposal and reference implementation if you use it."
 type: software
-title: "Self-Mutating Agents: Context as Agent-Owned State"
+title: "Self-Evolving Agents: Context as Agent-Owned State"
 authors:
   - family-names: "Brückner"
     given-names: "Lukas"
 version: 0.1.0
-repository-code: "https://github.com/LukasB97/self-mutating-agents"
+repository-code: "https://github.com/LukasB97/self-evolving-agents"
 abstract: >-
   A research proposal and reference implementation for agent-owned context,
   using executable JavaScript transformations of structured memory state.

@@ -53,8 +53,8 @@ export async function executeMutation(
           const isArray = Array.isArray;
           const isFinite = Number.isFinite;
           const input = JSON.parse(__stateJSON);
-          const compact = new Function("state", '"use strict";\\n' + __mutationCode);
-          const output = compact(input);
+          const evolve = new Function("state", '"use strict";\\n' + __mutationCode);
+          const output = evolve(input);
           if (!isArray(output)) throw new Error("Mutation must synchronously return a State array");
           return stringify(output, (_key, value) => {
             const type = typeof value;
