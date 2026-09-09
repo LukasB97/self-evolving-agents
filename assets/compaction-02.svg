@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="720" viewBox="0 0 1080 720" role="img" aria-labelledby="title desc">
+<title id="title">Second compaction</title>
+<desc id="desc">Before and after: a third result and a generalization discovered during new exploration enter the existing foundation, with their proofs retained. Space remains for iteration three.</desc>
+<defs>
+  <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+    <path d="M0 0L8 4L0 8Z" fill="#61717a"/>
+  </marker>
+</defs>
+<rect width="1080" height="720" fill="white"/>
+<g font-family="Arial, Helvetica, sans-serif" fill="#24333b">
+<text x="32" y="34" font-size="24" font-weight="600">Second compaction</text>
+<text x="32" y="76" font-size="19" font-weight="600">Before</text>
+<text x="32" y="99" font-size="14" fill="#61717a">End of iteration 2</text>
+<text x="32" y="123" font-size="12" fill="#61717a">Start of context</text>
+<rect x="32" y="136" width="450" height="36" fill="#e4e9ec"/>
+<text x="48" y="160" font-size="18" >The problem</text>
+<rect x="32" y="175" width="450" height="44" fill="#def0eb"/>
+<text x="48" y="203" font-size="18" >First result + proof</text>
+<rect x="32" y="222" width="450" height="44" fill="#def0eb"/>
+<text x="48" y="250" font-size="18" >Second result + proof</text>
+<rect x="32" y="269" width="450" height="36" fill="#f1f3f4"/>
+<text x="48" y="293" font-size="18" >Failed routes + why they fail</text>
+<rect x="32" y="308" width="450" height="44" fill="#f1f3f4"/>
+<text x="48" y="336" font-size="18" >Next approach + open questions</text>
+<path d="M32 377h104 M378 377h104" stroke="#c7d0d4"/>
+<text x="257" y="382" font-size="13" text-anchor="middle" fill="#61717a">End of first compaction</text>
+<rect x="32" y="402" width="450" height="44" fill="#f1f3f4"/>
+<text x="48" y="430" font-size="18" >Build on the two results</text>
+<rect x="32" y="449" width="450" height="52" fill="#f1f3f4"/>
+<text x="48" y="481" font-size="18" >New calculations</text>
+<rect x="32" y="504" width="450" height="36" fill="#def0eb"/>
+<text x="48" y="528" font-size="18" >Third result proved</text>
+<rect x="32" y="543" width="450" height="52" fill="#f1f3f4"/>
+<text x="48" y="575" font-size="18" >Try to generalize the first result</text>
+<rect x="32" y="598" width="450" height="36" fill="#def0eb"/>
+<text x="48" y="622" font-size="18" >Generalization proved</text>
+<rect x="32" y="637" width="450" height="36" fill="#f1f3f4"/>
+<text x="48" y="661" font-size="18" >Next: connect the results to the problem</text>
+<text x="32" y="701" font-size="13" fill="#61717a">Context almost full again</text>
+<text x="598" y="76" font-size="19" font-weight="600">After</text>
+<text x="598" y="99" font-size="14" fill="#61717a">Start of iteration 3</text>
+<text x="598" y="123" font-size="12" fill="#61717a">Start of context</text>
+<rect x="598" y="136" width="450" height="36" fill="#e4e9ec"/>
+<text x="614" y="160" font-size="18" >The problem</text>
+<rect x="598" y="175" width="450" height="52" fill="#def0eb"/>
+<text x="614" y="207" font-size="18" >First result + generalization + proofs</text>
+<rect x="598" y="230" width="450" height="44" fill="#def0eb"/>
+<text x="614" y="258" font-size="18" >Second result + proof</text>
+<rect x="598" y="277" width="450" height="44" fill="#def0eb"/>
+<text x="614" y="305" font-size="18" >Third result + proof</text>
+<rect x="598" y="324" width="450" height="36" fill="#f1f3f4"/>
+<text x="614" y="348" font-size="18" >Failed routes + why they fail</text>
+<rect x="598" y="363" width="450" height="44" fill="#f1f3f4"/>
+<text x="614" y="391" font-size="18" >Next: connect the results to the problem</text>
+<path d="M598 432h104 M944 432h104" stroke="#c7d0d4"/>
+<text x="823" y="437" font-size="13" text-anchor="middle" fill="#61717a">End of second compaction</text>
+<rect x="598" y="457" width="450" height="219" fill="white" stroke="#c7d0d4" stroke-dasharray="5 5"/>
+<text x="614" y="491" font-size="17" fill="#61717a">Room for new exploration</text>
+<text x="540" y="391" font-size="15" text-anchor="middle" fill="#61717a">evolve</text>
+<path d="M501 406H577" fill="none" stroke="#61717a" stroke-width="2" marker-end="url(#arrow)"/>
+</g>
+</svg>

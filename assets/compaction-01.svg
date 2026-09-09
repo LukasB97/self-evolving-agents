@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="649" viewBox="0 0 1080 649" role="img" aria-labelledby="title desc">
+<title id="title">First compaction</title>
+<desc id="desc">Before and after: two results scattered through exploration are grouped with their proofs, failed routes, and the next approach. Space remains for iteration two.</desc>
+<defs>
+  <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+    <path d="M0 0L8 4L0 8Z" fill="#61717a"/>
+  </marker>
+</defs>
+<rect width="1080" height="649" fill="white"/>
+<g font-family="Arial, Helvetica, sans-serif" fill="#24333b">
+<text x="32" y="34" font-size="24" font-weight="600">First compaction</text>
+<text x="32" y="76" font-size="19" font-weight="600">Before</text>
+<text x="32" y="99" font-size="14" fill="#61717a">End of iteration 1</text>
+<text x="32" y="123" font-size="12" fill="#61717a">Start of context</text>
+<rect x="32" y="136" width="450" height="36" fill="#e4e9ec"/>
+<text x="48" y="160" font-size="18" >The problem</text>
+<rect x="32" y="175" width="450" height="36" fill="#f1f3f4"/>
+<text x="48" y="199" font-size="18" >First approach</text>
+<rect x="32" y="214" width="450" height="52" fill="#f1f3f4"/>
+<text x="48" y="246" font-size="18" >Calculations and conjectures</text>
+<rect x="32" y="269" width="450" height="36" fill="#def0eb"/>
+<text x="48" y="293" font-size="18" >First result proved</text>
+<rect x="32" y="308" width="450" height="44" fill="#f1f3f4"/>
+<text x="48" y="336" font-size="18" >Further attempts</text>
+<rect x="32" y="355" width="450" height="36" fill="#f1f3f4"/>
+<text x="48" y="379" font-size="18" >Dead end</text>
+<rect x="32" y="394" width="450" height="36" fill="#f1f3f4"/>
+<text x="48" y="418" font-size="18" >New approach and conjecture</text>
+<rect x="32" y="433" width="450" height="52" fill="#f1f3f4"/>
+<text x="48" y="465" font-size="18" >More calculations</text>
+<rect x="32" y="488" width="450" height="36" fill="#f1f3f4"/>
+<text x="48" y="512" font-size="18" >Conjecture disproved</text>
+<rect x="32" y="527" width="450" height="36" fill="#def0eb"/>
+<text x="48" y="551" font-size="18" >Second result proved</text>
+<rect x="32" y="566" width="450" height="36" fill="#f1f3f4"/>
+<text x="48" y="590" font-size="18" >Next approach</text>
+<text x="32" y="630" font-size="13" fill="#61717a">Context almost full</text>
+<text x="598" y="76" font-size="19" font-weight="600">After</text>
+<text x="598" y="99" font-size="14" fill="#61717a">Start of iteration 2</text>
+<text x="598" y="123" font-size="12" fill="#61717a">Start of context</text>
+<rect x="598" y="136" width="450" height="36" fill="#e4e9ec"/>
+<text x="614" y="160" font-size="18" >The problem</text>
+<rect x="598" y="175" width="450" height="44" fill="#def0eb"/>
+<text x="614" y="203" font-size="18" >First result + proof</text>
+<rect x="598" y="222" width="450" height="44" fill="#def0eb"/>
+<text x="614" y="250" font-size="18" >Second result + proof</text>
+<rect x="598" y="269" width="450" height="36" fill="#f1f3f4"/>
+<text x="614" y="293" font-size="18" >Failed routes + why they fail</text>
+<rect x="598" y="308" width="450" height="44" fill="#f1f3f4"/>
+<text x="614" y="336" font-size="18" >Next approach + open questions</text>
+<path d="M598 377h104 M944 377h104" stroke="#c7d0d4"/>
+<text x="823" y="382" font-size="13" text-anchor="middle" fill="#61717a">End of first compaction</text>
+<rect x="598" y="402" width="450" height="203" fill="white" stroke="#c7d0d4" stroke-dasharray="5 5"/>
+<text x="614" y="436" font-size="17" fill="#61717a">Room for new exploration</text>
+<text x="540" y="355.5" font-size="15" text-anchor="middle" fill="#61717a">evolve</text>
+<path d="M501 370.5H577" fill="none" stroke="#61717a" stroke-width="2" marker-end="url(#arrow)"/>
+</g>
+</svg>
