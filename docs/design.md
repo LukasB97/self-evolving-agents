@@ -12,7 +12,7 @@ System instructions and tool definitions remain outside the mutable State in thi
 
 [state.ts](../src/state.ts) is the canonical, JSON-compatible representation supported by this implementation. JSON serialization and parsing preserve its values. The executor rejects unsupported shapes and non-finite numbers. Serialization does not promise to preserve JavaScript object identity or non-JSON behavior.
 
-The intended provider adapter maps supported messages and parts into the format the model receives. That mapping must preserve content, order, and tool relationships, and permit precise targeting of messages and parts. The model is already reading its state; a second full JSON copy should not be necessary.
+The intended provider adapter maps supported messages and parts into the format the model receives. The bijection must preserve content, order, and tool relationships without prescribing how the structure appears to the model. Given the State types, the model can express selections through content and relationships in code, resolving positions and IDs during execution. A second full JSON copy should not be necessary.
 
 This repo does not establish a universal bijection across provider APIs. A real adapter must test roundtrips and handle provider-only metadata. Opaque reasoning payloads are outside this prototype's type set. Extending it requires explicit replay rules; silently dropping them would violate the premise.
 
@@ -51,8 +51,10 @@ The intended objective balances future context quality with resource cost. The e
 
 ```text
 cacheCost = afterTokens - reusablePrefixTokens
-compactionCost = evolveCallTokens + cacheCost
+compactionCost = alpha * evolveCallTokens + cacheCost
 ```
+
+`alpha` weights an output token relative to an uncached input token, so compactionCost is in input-token equivalents. For price-based weighting, use the output-to-uncached-input token price ratio. Integrations must supply this weight; report it alongside evaluation costs.
 
 [estimateCacheCost](../src/cache-cost.ts) compares two token arrays and counts the longest identical prefix. The supplied sequences must describe complete serialized model inputs, including stable system/tool material and the mutation receipt where applicable. Comparing only `JSON.stringify(state)` would not measure provider prompt caching.
 
