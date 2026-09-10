@@ -8,19 +8,17 @@ Lukas Brückner · Concept paper and reference implementation
 
 Long-running agents must compact their context while preserving information needed for further work. We propose treating that context as editable working memory. The agent writes code that locates and transforms existing messages and their parts, preserving selected material exactly and generating only the edits and new content. Repeated compactions can develop a stable, revisable core of knowledge and working practices. We propose training these decisions through their effects on task performance and resource use, accounting for both generated code and prompt-cache reuse. A reference implementation demonstrates execution and validation; reliable model use and benefits across long tasks remain to be evaluated.
 
-## 1. Context and working memory
+## 1. Transcript and context
 
-The application running an agent supplies a model with instructions and messages. The messages contain user requests, earlier model responses, and tool results. Together, these instructions and messages form the model's **context**.
+The **transcript** records the user messages, model responses, and tool calls and results produced during a task. The **context** is the version of that record supplied to the model for its next response.
 
-The model's context window limits how much input a model call can accept. **Compaction** reduces the accumulated messages so the agent can continue within this limit.
+A model can accept only a limited amount of context. To continue a long task, earlier context must therefore be reduced. This process is **compaction**. It changes the context while preserving the full transcript.
 
-The complete message history is the **transcript**. We call the messages supplied to the next model call the agent's **working memory**. Compaction changes this working memory; the transcript can be stored separately and kept unchanged.
-
-Suppose a code search returns four matches, but only two concern the password-reset behavior being investigated. Each match contains a file path, line number, and source text. A compacted result could keep those two records unchanged and add a note that the other two were removed.
-
-We propose that the agent write code to make such changes to its working memory. The application executes the code against the existing messages, so selected records can be retained without the model reproducing them. The resulting messages become the agent's working memory for the next model call. The transcript remains unchanged.
+The context is the agent's **working memory**. We propose that the agent express its compaction decisions as code. The code transforms the existing context, preserving selected content exactly without requiring the model to reproduce it. The result becomes the context for the next model call.
 
 ## 2. Representing working memory
+
+Suppose a code search returns four matches, but only two concern the password-reset behavior being investigated. Each match contains a file path, line number, and source text. A compacted result could keep those two records unchanged and add a note that the other two were removed.
 
 To apply that selection, the application needs a representation in which the search result and its individual records can be located and changed. The reference implementation stores working memory as an ordered array of messages. Each message has a role and an ordered list of parts. We call this structured working memory **State**. System instructions and tool definitions remain outside it.
 
