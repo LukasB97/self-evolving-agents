@@ -10,15 +10,15 @@ Long-running agents must compact their context while preserving information need
 
 ## 1. Context and working memory
 
-An agent chooses its next action from the context supplied to its model. This includes instructions, the user's task, and messages accumulated during the work. Responses and tool results add material to that context. The model's context window limits how much it can receive at once.
+The application running an agent supplies a model with instructions and messages. The messages contain user requests, earlier model responses, and tool results. Together, these instructions and messages form the model's **context**.
 
-**Compaction** replaces some of this accumulated material with a smaller representation from which the agent can continue. A summary carries selected information forward in newly written text; original material can also be retained. What survives determines which evidence, constraints, and earlier conclusions remain available for subsequent decisions.
+The model's context window limits how much input a model call can accept. **Compaction** reduces the accumulated messages so the agent can continue within this limit.
 
-The complete record of the interaction is the **transcript**. In this proposal, the application keeps that record independently of the context used for continued work. We call the editable portion of that context the agent's **working memory**. Editing working memory changes what the agent works from while leaving the transcript intact.
+The complete message history is the **transcript**. We call the messages supplied to the next model call the agent's **working memory**. Compaction changes this working memory; the transcript can be stored separately and kept unchanged.
 
-We propose letting the agent choose edits within its working memory. It can keep an existing passage exactly, shorten another, remove irrelevant material, or bring related information together. The application applies these edits to the existing memory and supplies the result to the model.
+Suppose a code search returns four matches, but only two concern the password-reset behavior being investigated. Each match contains a file path, line number, and source text. A compacted result could keep those two records unchanged and add a note that the other two were removed.
 
-Suppose the agent is investigating password-reset expiry. A search returns four code matches, each with a path, line number, and source text. Two concern password resets; the others concern image caching and billing. The agent wants to retain the two relevant records exactly and add a note explaining the selection. The rest of its memory can stay as it is.
+We propose that the agent write code to make such changes to its working memory. The application executes the code against the existing messages, so selected records can be retained without the model reproducing them. The resulting messages become the agent's working memory for the next model call. The transcript remains unchanged.
 
 ## 2. Representing working memory
 
