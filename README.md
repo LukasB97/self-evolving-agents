@@ -6,23 +6,23 @@ Lukas Brückner · Concept paper and reference implementation
 
 ## Abstract
 
-We propose a compaction mechanism in which an agent writes a function that transforms its current context. The function operates on the existing messages and their parts, allowing the agent to preserve content exactly, edit individual results, and reorganize larger sections. The agent decides when to compact and what to change, balancing the quality of the resulting context against the cost of generating edits and invalidating its prompt cache. We propose training these decisions with reinforcement learning through their effects on subsequent work. Across a long-running task, repeated compactions can develop an increasingly stable core of knowledge and working practices within the agent's memory. This paper describes the mechanism, illustrates its use, and identifies what needs to be evaluated. The repository provides a reference implementation of the execution mechanism.
+Long-running agents must compact their context while preserving information needed for further work. We propose treating that context as editable working memory. The agent writes code that locates and transforms existing messages and their parts, preserving selected material exactly and generating only the edits and new content. Repeated compactions can develop a stable, revisable core of knowledge and working practices. We propose training these decisions through their effects on task performance and resource use, accounting for both generated code and prompt-cache reuse. A reference implementation demonstrates execution and validation; reliable model use and benefits across long tasks remain to be evaluated.
 
-## 1. The compaction action is a function
+## 1. Transcript and context
 
-An agent accumulates context as it works: user messages, its own reasoning and responses, tool calls, and tool results. Because its context window is finite, a long task eventually requires some of that material to be compacted. Compaction produces a smaller representation from which the agent can continue.
+The **transcript** records the user messages, model responses, and tool calls and results produced during a task. The **context** is the version of that record supplied to the model for its next response.
 
-Current implementations take different forms. [Anthropic's compaction](https://platform.claude.com/docs/en/build-with-claude/compaction) asks the model to produce a continuation summary and uses that summary to replace earlier content. [OpenAI's compaction](https://developers.openai.com/api/docs/guides/compaction) returns a context containing an opaque, encrypted compaction item and potentially retained original items. These mechanisms already carry useful state forward, and a summary can organize that state around the task.
+A model can accept only a limited amount of context. To continue a long task, earlier context must therefore be reduced. This process is **compaction**. It changes the context while preserving the full transcript.
 
-The accumulated context records a history of states and interactions. This proposal reframes that context as **the agent's own working memory**, whose contents and organization it can change. Within this one memory, the beginning can hold long-term knowledge and working practices, the middle ongoing work, and the end short-term observations and exploration.
+The context is the agent's **working memory**. We propose that the agent express its compaction decisions as code. The code transforms the existing context, preserving selected content exactly without requiring the model to reproduce it. The result becomes the context for the next model call.
 
-The agent therefore needs to understand that what it sees may already contain selected evidence, rewritten messages, or notes from earlier compactions. The actual conversation remains in an independently stored transcript. The [system suffix](src/system-message-suffix.md) establishes this relationship:
+## 2. Representing working memory
 
-> What follows is your state.<br>
-> You manage it yourself.<br>
-> It is not the literal conversation the user sees.
+Suppose a code search returns four matches, but only two concern the password-reset behavior being investigated. Each match contains a file path, line number, and source text. A compacted result could keep those two records unchanged and add a note that the other two were removed.
 
-The harness represents this memory as an array of messages, each containing typed parts. The reference implementation uses the following [types](src/state.ts):
+To apply that selection, the application needs a representation in which the search result and its individual records can be located and changed. The reference implementation stores working memory as an ordered array of messages. Each message has a role and an ordered list of parts. We call this structured working memory **State**. System instructions and tool definitions remain outside it.
+
+Parts distinguish text, structured data, and files. In the search example, the records are structured data and the added note is text. The following types define these parts; `Json` specifies the values supported in structured data and tool arguments.
 
 ```ts
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
@@ -30,6 +30,11 @@ type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 type TextPart = { type: "text"; text: string };
 type ObjectPart = { type: "object"; data: Record<string, Json> };
 type FilePart = { type: "file"; data: string; mimeType: string };
+```
+
+A tool call records the tool's name and arguments. Its identifier connects it to the corresponding result. A result can contain several parts, allowing the search records and the agent's note to coexist within it.
+
+```ts
 type ToolCallPart = {
   type: "toolCall";
   id: string;
@@ -42,32 +47,36 @@ type ToolResultPart = {
   callId: string;
   content: ToolResultContentPart[];
 };
+```
+
+Messages group these parts by their role. Together, they define the complete [State type](src/state.ts) used by the prototype.
+
+```ts
 type Message =
   | { role: "user"; parts: (TextPart | FilePart)[] }
   | { role: "model"; parts: (TextPart | FilePart | ToolCallPart)[] }
   | { role: "tool"; parts: ToolResultPart[] };
+
 type State = Message[];
 ```
 
-We know the structured state and supply its type definitions to the agent; we leave its model-visible representation unspecified. The required relationship is a **bijection**: a unique, reversible correspondence preserving the state's content and structure. This does not prescribe how that structure appears to the agent or which positions and identifiers it can directly recognize.
+## 3. Editing State with code
 
-Code lets the agent translate its understanding of the context into operations on this known structure. Through searches, filters, and relationships, it can describe which material it means and resolve its location during execution. For example, it can find a tool call by its search query, then use the call's ID to locate the result without knowing that ID in advance. It can likewise select the first image after a recognized passage without knowing its array index. Provider integrations must establish the correspondence and test whether models can reliably write these transformations; the [design notes](docs/design.md) discuss the requirements.
+The agent chooses an edit from the context it receives, while the application must apply that edit to the State it stores. The material the agent understands must therefore correspond to the material being edited. For the supported State, the proposal requires a **bijection** between State and its model-visible representation: a unique, reversible correspondence preserving content and structure.
 
-The compaction action can now be expressed as a function over this existing memory. The agent calls `evolve` with JavaScript executed as the body of:
+The model-visible representation itself remains unspecified. Knowing the State types does not establish how their structure appears to the agent or which positions and identifiers it can directly recognize. The agent needs a way to express which material it means and have its location resolved in State.
+
+Code provides that means. Given the State type definitions, the agent writes a JavaScript function that searches for and transforms the intended material. It can combine content searches, filters, and structural relationships. For example, the function can find a tool call through its search query and use the stored ID to locate the result. The agent need not know that ID in advance. Similarly, it can select the first image after a recognized passage without specifying an array index. The function resolves these locations when it runs.
+
+The agent submits its function body through a tool named `evolve`. The application supplies the current State as its argument and uses the returned State as the replacement.
 
 ```ts
 function evolve(state: State): State
 ```
 
-The harness runs the function on a copy of its actual current state, validates the returned state, and adopts it as the context for continued generation. If the transformation fails, it keeps the prior state. The model generates the changes and any new content; retained material comes directly from the existing state.
+Execution runs on a copy of State. The application checks the returned message structure and tool-call relationships before adopting it for continued generation. A failed execution or invalid result leaves the prior memory in place. These checks constrain execution and structural validity; the agent chooses the memory's content and organization.
 
-The harness constrains execution and structural validity, not the contents or organization the agent chooses for its memory.
-
-## 2. Compaction within a single tool result
-
-Suppose a search returns four code matches about expiry. Two concern password resets; the others concern image caching and billing. The agent wants to keep the password-reset evidence exactly, including the source text, paths, and line numbers.
-
-It can locate the result by its structure, select records by their contents, and add a note in the same tool result:
+For the four search matches, the function body locates the result, filters its records, and appends the note.
 
 ```js
 const result = state
@@ -94,73 +103,70 @@ result.content.push({
 return state;
 ```
 
-The retained records come directly from the existing state. Everything outside the edit stays intact, and the note identifies the selection as the agent's own intervention. The [runnable example](examples/02-annotated-evidence/) includes the input and output states. The same operation can select a small amount of evidence from a much larger response.
+The retained records come directly from State. The model generates the selection code and the note, and everything outside the edit stays intact. The [runnable example](examples/02-annotated-evidence/) includes the input and output. The same operations can gather related material across messages or reorganize most of the memory.
 
-This control extends to every supported level of the representation. The agent can shorten a verbose explanation while keeping the user's original request, combine related information from several messages, or reorganize most of its context. Code supplies operations for finding and transforming existing data as well as inserting new text. The compaction can be as local or as extensive as the agent judges useful.
+## 4. Compaction cost
 
-## 3. Learning when and how to compact
+Writing an edit generates output tokens. Continuing from the edited State also requires processing the resulting model input. **Prompt caching** can reuse computation for an unchanged beginning of that input. Under an exact-prefix cache, changing an early token prevents reuse of the cached prefix beyond that position, even when later content remains identical.
 
-`evolve` is available during the agent's work. The agent decides when to call it and what transformation to write. The harness can also request a compaction, for example as the context approaches a limit.
-
-The aim is to maximize the quality of the resulting context while minimizing the cost of the compaction. That cost depends partly on where the agent edits. Under exact-prefix prompt caching, an unchanged beginning can be reused on the next call. Changing an early part can invalidate reuse of everything after it, even when the later content itself remains identical.
-
-Compaction has two immediate token costs: generating the `evolve` tool call and processing the part of the resulting input that cannot reuse the prompt cache. Weighting output tokens relative to uncached input tokens gives:
+The resulting input tokens outside the reusable prefix form the **Cache Cost**. To combine this with the cost of generating the `evolve` call, let `alpha` weight an output token relative to an uncached input token. For price-based weighting, `alpha` is the ratio of their respective token prices. **Compaction Cost** is then expressed in input-token equivalents.
 
 ```text
 Cache Cost = resultingInputTokens - reusablePrefixTokens
-
 Compaction Cost = alpha * evolveCallTokens + Cache Cost
 ```
 
-Here `alpha` is the cost of an output token relative to an uncached input token, expressing Compaction Cost in input-token equivalents. For a price-based weighting, it is the ratio of their respective token prices.
+The prefix must be measured over the complete serialized model input, including system instructions and tool definitions. An identical prefix is an opportunity for reuse; actual cache hits also depend on the provider's serialization and cache availability. Total task cost additionally includes cache reads, execution, and subsequent inference.
 
-The reusable prefix must be measured over the complete serialized model input, including system instructions and tool definitions. The [cost helper](src/cache-cost.ts) computes this cache component from the longest identical prefix of supplied token sequences; actual cache hits also depend on provider serialization and cache availability.
+Preserving existing material saves the output tokens needed to reproduce it. Position also matters: a small edit near the end may cost less than an equally small edit near the beginning. This favors placing material expected to remain stable earlier in memory. A larger reorganization can still be worthwhile if it improves or reduces the cost of subsequent work.
 
-A small edit near the end can therefore have a different cost from a change near the beginning. A larger reorganization might still repay its cost through better subsequent work. Preserving content directly also saves the output tokens that would otherwise be needed to reproduce it. These effects mean that the timing and extent of compaction should be evaluated together.
+## 5. Memory across repeated compactions
 
-Position is therefore part of the memory policy. Cache costs favor placing material expected to remain stable near the beginning and ongoing work nearer the end. The agent must learn when knowledge is established enough to move toward the beginning and when revising earlier memory is worth losing cache reuse.
+An agent continuing a task for hours or days can compact its memory many times. Each replacement becomes the basis for further work, whose results give the agent reasons to retain, refine, or correct that memory. Model weights remain fixed during this process.
 
-We propose using reinforcement learning to train when and how the agent edits its memory, based on the effects on continued work. The objective combines task completion with total resource use, including Compaction Cost and subsequent inference. The action remains a general JavaScript transformation rather than a fixed set of edit operations or a prescribed memory schema. Strategies for selecting, organizing, annotating, and revising memory are learned through what succeeds across the task. The policy may make frequent small edits, compact larger sections occasionally, or combine both.
+Consider an agent exploring a mathematical problem. It tries approaches, tests conjectures, and proves two results. The proofs are scattered among the attempts that produced them. A compaction brings the results and their proofs together after the problem statement, retaining the reasons earlier approaches failed and the next direction to explore.
 
-## 4. What repeated compaction can develop
+![First compaction: scattered proofs become an organized foundation alongside failed approaches and the next direction.](assets/compaction-01.svg)
 
-The intended setting is one agent continuing the same task across many compactions, potentially for hours or days. During this task, model weights remain fixed while memory develops through experience. Each compaction changes the memory that guides later actions; their outcomes inform what the agent retains, refines, or corrects in the next compaction.
+*Green blocks mark established knowledge. Block heights are schematic and do not represent token counts.*
 
-Consider an agent working on a mathematical problem. It explores approaches, makes calculations, tests conjectures, and proves results. At first, the proved results are scattered among the attempts that produced them.
+Working from this memory, the agent proves a third result and generalizes the first. A further compaction incorporates the generalization, places the third result with the earlier proofs, and updates the next step. The proofs can be retained exactly as their organization changes.
 
-The first compaction brings the results and their proofs together after the problem. It keeps the reasons earlier approaches failed and the next direction to explore.
+![Second compaction: further work extends and revises the foundation while retaining the proofs.](assets/compaction-02.svg)
 
-![First compaction, before and after: results scattered through exploration become a foundation of proved knowledge, failed routes, and the next approach.](assets/compaction-01.svg)
+The memory can also carry lessons about how to work. After unsuccessful proof attempts, the agent might retain a practice of searching for counterexamples earlier. If useful, that practice can continue to guide later attempts; contrary experience can prompt its revision.
 
-*Green blocks mark established knowledge. These are schematic snapshots; block heights do not represent token counts.*
+Knowledge and working practices that remain useful across these cycles can form an increasingly stable, revisable core. This is the sense in which the agent is **self-evolving**: experience changes its persistent working memory, which in turn shapes its subsequent decisions.
 
-Working from those results, the agent proves a third and finds a generalization of the first. These discoveries enter at the end as the new work unfolds.
+## 6. Learning when and how to compact
 
-The next compaction incorporates the generalization into the first result, places the third with the other established knowledge, and updates the next step. The agent can keep the exact proofs while changing their organization.
+The value of an edit depends on what happens afterward. Removing evidence may make the current input cheaper but prevent a later solution. Reorganizing a proof may cost tokens now and save substantial work later. Choosing edits therefore requires balancing task performance against costs across continued work.
 
-![Second compaction, before and after: new exploration extends the foundation with a third result and a generalization of the first, with their proofs retained.](assets/compaction-02.svg)
+We call the agent's strategy for choosing when to compact and what transformation to write its **compaction policy**. The `evolve` tool is available during the task; the application can also request a compaction as the context approaches its limit.
 
-Over these cycles, the agent has developed a foundation from its own work. This can include lessons about its methods as well as mathematical results. After several failed proof attempts, it might learn to search for counterexamples earlier and carry that practice into its next attempt.
+We propose training this policy with reinforcement learning using subsequent task outcomes and total resource use. Its actions are JavaScript transformations over State. Training can favor useful ways to select, organize, annotate, and revise memory, including frequent small edits, occasional larger reorganizations, or both. This trains the decisions that govern memory development; during an individual task, those decisions change State while model weights remain fixed.
 
-Knowledge and working practices that remain useful across these cycles can form an increasingly stable core that guides further work and remains open to correction. This is the sense in which the agent is self-evolving: it learns through changes to its own persistent working memory.
+## 7. Evaluation and related work
 
-## 5. Evaluating the mechanism
+The research question is whether an agent can learn a sequence of compactions that improves task completion across long tasks at a worthwhile total cost. Execution alone establishes that edits can be applied. Evaluation must also test whether models reliably translate their understanding into edits of the intended State values and whether those edits help subsequent work.
 
-The execution mechanism makes these edits possible. The research question is whether an agent can learn a sequence of compactions that improves task completion across long tasks at a worthwhile total cost.
+Comparisons should use the same model, tasks, tools, context limit, and inference budget. Summary-based compaction should be allowed to organize knowledge and working practices. A comparison with fixed structured edit operations can test the contribution of JavaScript's expressiveness.
 
-Compare the proposed mechanism with existing compaction methods using the same model, tasks, tools, context limit, and inference budget. An organized summary should be allowed to build the same kind of foundation shown above. A comparison with a fixed set of structured edit operations would test how much the expressiveness of JavaScript contributes.
+Tasks should make earlier evidence, corrections, and learned practices matter across several compactions. Measure task success, exact evidence and constraint preservation, repeated mistakes, tokens, latency, and actual cache use. Inspect whether retained lessons affect behavior and are corrected when experience contradicts them. Report training resources and cost weights separately. The [evaluation notes](docs/evaluation.md) describe the proposed experiments.
 
-Tasks should make earlier evidence, corrections, and learned practices matter across several compactions. Measure task success, exact constraint and evidence preservation, repeated mistakes, tokens, latency, and actual cache use. For a learned policy, report training resources separately. A shorter context is useful only insofar as it supports the work and its resource budget.
+Existing approaches provide relevant comparisons. [Anthropic's compaction](https://platform.claude.com/docs/en/build-with-claude/compaction) produces a continuation summary; [OpenAI's compaction](https://developers.openai.com/api/docs/guides/compaction) returns an opaque encrypted compaction item and may retain original items. [MemGPT](https://arxiv.org/abs/2310.08560) manages memory tiers, and [AgentFold](https://arxiv.org/abs/2510.24699) restructures context at different scales. Google's [AnchoredContextCompactor](https://adk.dev/api-reference/typescript/classes/AnchoredContextCompactor.html) maintains a working state at the start of context. [Context-Folding and FoldGRPO](https://arxiv.org/abs/2510.11967) and [FoldAct](https://arxiv.org/abs/2512.22733) study learning to manage context.
 
-An agent can also preserve an incorrect conclusion or discard a detail it later needs. Its compaction decisions change the inputs from which subsequent decisions are made, so their effects can persist. Evaluation should inspect whether retained lessons influence behavior and whether the agent revises them when contradicted by experience. Delayed consequences and the changing inputs also make reinforcement learning a substantive part of the research problem. The [evaluation notes](docs/evaluation.md) give a fuller experimental outline.
+## 8. Reference implementation
 
-Existing systems already investigate self-managed memory and context restructuring. [MemGPT](https://arxiv.org/abs/2310.08560) manages memory tiers; [AgentFold](https://arxiv.org/abs/2510.24699) restructures context at different scales. Google's [AnchoredContextCompactor](https://adk.dev/api-reference/typescript/classes/AnchoredContextCompactor.html) maintains a working state at the start of the context and incorporates later events into it. [Context-Folding and FoldGRPO](https://arxiv.org/abs/2510.11967) and [FoldAct](https://arxiv.org/abs/2512.22733) study learning to manage context. Executable transformations of the current messages and parts should be evaluated against these existing capabilities.
+The prototype executes model-written JavaScript in QuickJS with bounded resources and no external access. It validates State and tool-call relationships before accepting a replacement. The [integration boundary](src/apply-mutation.ts) handles successful and failed edits. The [design notes](docs/design.md) specify execution limits, provider requirements, and transcript storage. The [cache helper](src/cache-cost.ts) estimates the reusable prefix from supplied token sequences.
 
-## 6. Reference implementation
+The agent must understand that its memory may contain edits from previous compactions. The [system suffix](src/system-message-suffix.md) communicates the distinction between working memory and transcript.
 
-The prototype uses QuickJS to execute model-written JavaScript with bounded resources and no external access. It validates message and part structure and tool-call relationships before accepting a replacement. System instructions and tool definitions remain outside mutable state. The [integration boundary](src/apply-mutation.ts) handles successful and failed edits; the [design notes](docs/design.md) specify execution limits, provider requirements, and harness responsibilities.
+> What follows is your state.<br>
+> You manage it yourself.<br>
+> It is not the literal conversation the user sees.
 
-Three hand-written examples demonstrate [shortening a model explanation](examples/01-selective-compression/), [selecting exact evidence](examples/02-annotated-evidence/), and [consolidating a corrected task](examples/03-current-task/). The repository includes no live provider adapter, reinforcement-learning training, or measured agent-performance results. Token and cache accounting require a provider integration.
+Three hand-written examples demonstrate [shortening an explanation](examples/01-selective-compression/), [selecting exact evidence](examples/02-annotated-evidence/), and [consolidating a corrected task](examples/03-current-task/). There is no live provider adapter, reinforcement-learning training, or measured agent-performance result in this release. Provider integration must establish the required correspondence and supply token and cache measurements.
 
 With Node.js 22 or later and pnpm 11.19.0, run:
 
