@@ -32,7 +32,29 @@ Compaction determines what the agent carries forward into its next steps. A deta
 
 A common approach replaces earlier context with a generated summary, sometimes retaining selected messages alongside it. We propose letting the agent express its compaction decisions as code that transforms the existing messages and their parts. Selected material can be preserved exactly, while the model generates only the transformation code and any new or rewritten content.
 
-## 2. Representing working memory
+## 2. Context as editable working memory
+
+We propose treating the agent’s context as working memory whose contents and organization it can change. During compaction, the agent decides which material to preserve, which passages to rewrite, and where information belongs in the context from which it will continue.
+
+Consider an agent working on a mathematical problem. It explores several approaches and proves two results. As this work unfolds, the proofs appear among calculations, conjectures, and unsuccessful attempts.
+
+The agent can bring the two results and their proofs together near the beginning of its context, following the problem statement. It can condense unsuccessful attempts into explanations of why they failed and retain the next approach to explore. The proofs themselves can be carried forward exactly.
+
+![First compaction: scattered proofs become an organized foundation alongside failed approaches and the next direction.](assets/compaction-01.svg)
+
+*Green blocks mark established knowledge. Block heights are schematic and do not represent token counts.*
+
+The resulting context gives the agent an organized basis for further work. Established results are available together, reasons for abandoning earlier approaches remain accessible, and space is available for new exploration.
+
+As the agent continues, new work is appended to this context. It proves a third result and finds a generalization of the first. At the next compaction, it can incorporate the generalization alongside the original result, place the third result with the existing proofs, and update the next step.
+
+![Second compaction: further work extends and revises the foundation while retaining the proofs.](assets/compaction-02.svg)
+
+Each compaction therefore edits a context that may already contain earlier edits. Material that remains useful can be preserved across these cycles, while new findings give the agent reasons to revise both its content and its organization. The context develops with the work.
+
+Our proposed mechanism lets the agent express these changes as code operating on the existing context. The next chapter explains how the agent can locate and transform that material while retaining selected content directly.
+
+## 3. Representing working memory
 
 Suppose a code search returns four matches, but only two concern the password-reset behavior being investigated. Each match contains a file path, line number, and source text. A compacted result could keep those two records unchanged and add a note that the other two were removed.
 
@@ -76,7 +98,7 @@ type Message =
 type State = Message[];
 ```
 
-## 3. Editing State with code
+## 4. Editing State with code
 
 The agent chooses an edit from the context it receives, while the application must apply that edit to the State it stores. The material the agent understands must therefore correspond to the material being edited. For the supported State, the proposal requires a **bijection** between State and its model-visible representation: a unique, reversible correspondence preserving content and structure.
 
@@ -121,7 +143,7 @@ return state;
 
 The retained records come directly from State. The model generates the selection code and the note, and everything outside the edit stays intact. The [runnable example](examples/02-annotated-evidence/) includes the input and output. The same operations can gather related material across messages or reorganize most of the memory.
 
-## 4. Compaction cost
+## 5. Compaction cost
 
 Writing an edit generates output tokens. Continuing from the edited State also requires processing the resulting model input. **Prompt caching** can reuse computation for an unchanged beginning of that input. Under an exact-prefix cache, changing an early token prevents reuse of the cached prefix beyond that position, even when later content remains identical.
 
@@ -136,25 +158,15 @@ The prefix must be measured over the complete serialized model input, including 
 
 Preserving existing material saves the output tokens needed to reproduce it. Position also matters: a small edit near the end may cost less than an equally small edit near the beginning. This favors placing material expected to remain stable earlier in memory. A larger reorganization can still be worthwhile if it improves or reduces the cost of subsequent work.
 
-## 5. Memory across repeated compactions
+## 6. Memory across repeated compactions
 
 An agent continuing a task for hours or days can compact its memory many times. Each replacement becomes the basis for further work, whose results give the agent reasons to retain, refine, or correct that memory. Model weights remain fixed during this process.
-
-Consider an agent exploring a mathematical problem. It tries approaches, tests conjectures, and proves two results. The proofs are scattered among the attempts that produced them. A compaction brings the results and their proofs together after the problem statement, retaining the reasons earlier approaches failed and the next direction to explore.
-
-![First compaction: scattered proofs become an organized foundation alongside failed approaches and the next direction.](assets/compaction-01.svg)
-
-*Green blocks mark established knowledge. Block heights are schematic and do not represent token counts.*
-
-Working from this memory, the agent proves a third result and generalizes the first. A further compaction incorporates the generalization, places the third result with the earlier proofs, and updates the next step. The proofs can be retained exactly as their organization changes.
-
-![Second compaction: further work extends and revises the foundation while retaining the proofs.](assets/compaction-02.svg)
 
 The memory can also carry lessons about how to work. After unsuccessful proof attempts, the agent might retain a practice of searching for counterexamples earlier. If useful, that practice can continue to guide later attempts; contrary experience can prompt its revision.
 
 Knowledge and working practices that remain useful across these cycles can form an increasingly stable, revisable core. This is the sense in which the agent is **self-evolving**: experience changes its persistent working memory, which in turn shapes its subsequent decisions.
 
-## 6. Learning when and how to compact
+## 7. Learning when and how to compact
 
 The value of an edit depends on what happens afterward. Removing evidence may make the current input cheaper but prevent a later solution. Reorganizing a proof may cost tokens now and save substantial work later. Choosing edits therefore requires balancing task performance against costs across continued work.
 
@@ -162,7 +174,7 @@ We call the agent's strategy for choosing when to compact and what transformatio
 
 We propose training this policy with reinforcement learning using subsequent task outcomes and total resource use. Its actions are JavaScript transformations over State. Training can favor useful ways to select, organize, annotate, and revise memory, including frequent small edits, occasional larger reorganizations, or both. This trains the decisions that govern memory development; during an individual task, those decisions change State while model weights remain fixed.
 
-## 7. Evaluation and related work
+## 8. Evaluation and related work
 
 The research question is whether an agent can learn a sequence of compactions that improves task completion across long tasks at a worthwhile total cost. Execution alone establishes that edits can be applied. Evaluation must also test whether models reliably translate their understanding into edits of the intended State values and whether those edits help subsequent work.
 
@@ -172,7 +184,7 @@ Tasks should make earlier evidence, corrections, and learned practices matter ac
 
 Existing approaches provide relevant comparisons. [Anthropic's compaction](https://platform.claude.com/docs/en/build-with-claude/compaction) produces a continuation summary; [OpenAI's compaction](https://developers.openai.com/api/docs/guides/compaction) returns an opaque encrypted compaction item and may retain original items. [MemGPT](https://arxiv.org/abs/2310.08560) manages memory tiers, and [AgentFold](https://arxiv.org/abs/2510.24699) restructures context at different scales. Google's [AnchoredContextCompactor](https://adk.dev/api-reference/typescript/classes/AnchoredContextCompactor.html) maintains a working state at the start of context. [Context-Folding and FoldGRPO](https://arxiv.org/abs/2510.11967) and [FoldAct](https://arxiv.org/abs/2512.22733) study learning to manage context.
 
-## 8. Reference implementation
+## 9. Reference implementation
 
 The prototype executes model-written JavaScript in QuickJS with bounded resources and no external access. It validates State and tool-call relationships before accepting a replacement. The [integration boundary](src/apply-mutation.ts) handles successful and failed edits. The [design notes](docs/design.md) specify execution limits, provider requirements, and transcript storage. The [cache helper](src/cache-cost.ts) estimates the reusable prefix from supplied token sequences.
 
