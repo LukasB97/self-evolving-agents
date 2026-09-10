@@ -8,13 +8,29 @@ Lukas Brückner · Concept paper and reference implementation
 
 Long-running agents must compact their context while preserving information needed for further work. We propose treating that context as editable working memory. The agent writes code that locates and transforms existing messages and their parts, preserving selected material exactly and generating only the edits and new content. Repeated compactions can develop a stable, revisable core of knowledge and working practices. We propose training these decisions through their effects on task performance and resource use, accounting for both generated code and prompt-cache reuse. A reference implementation demonstrates execution and validation; reliable model use and benefits across long tasks remain to be evaluated.
 
-## 1. Transcript and context
+## 1. Long-running agents and compaction
 
-The **transcript** records the user messages, model responses, and tool calls and results produced during a task. The **context** is the version of that record supplied to the model for its next response.
+As agents take on longer tasks, a single run can span hours or days. Throughout that run, user messages, model responses, tool calls, and tool results accumulate. We call this complete record the **history**, represented as a sequence of messages,
 
-A model can accept only a limited amount of context. To continue a long task, earlier context must therefore be reduced. This process is **compaction**. It changes the context while preserving the full transcript.
+$$
+H_t = (m_1, \ldots, m_t).
+$$
 
-The context is the agent's **working memory**. We propose that the agent express its compaction decisions as code. The code transforms the existing context, preserving selected content exactly without requiring the model to reproduce it. The result becomes the context for the next model call.
+At each invocation, the model receives a **context** $C_t$, also a sequence of messages, containing the information available for its next step. Early in a run, this context can include the entire history. As the run continues, the accumulated material can exceed the model’s context window.
+
+**Compaction** transforms the current context into a smaller representation from which the agent can continue,
+
+$$
+C'_t = f_t(C_t).
+$$
+
+It can summarize earlier work, remove unnecessary material, and retain relevant details. The resulting context may therefore contain both original and rewritten messages. Its usefulness depends on preserving the information needed for subsequent work.
+
+The compacted context becomes the basis for further model calls, leaving room for new information. The full history remains stored separately. Through repeated compactions, an agent can continue working beyond the amount of history that fits into a single context window.
+
+Compaction determines what the agent carries forward into its next steps. A detail removed now may be needed later, while unnecessary material occupies space that could support new work. How should an agent decide what to preserve, what to rewrite, and what to remove?
+
+A common approach replaces earlier context with a generated summary, sometimes retaining selected messages alongside it. We propose letting the agent express its compaction decisions as code that transforms the existing messages and their parts. Selected material can be preserved exactly, while the model generates only the transformation code and any new or rewritten content.
 
 ## 2. Representing working memory
 
