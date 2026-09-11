@@ -272,10 +272,10 @@ Prompt caching can reuse computation for an unchanged beginning of the model inp
 Let $I(C)$ denote the complete serialized and tokenized model input for context $C$, including system instructions and tool definitions. Under an exact-prefix model,
 
 $$
-\operatorname{CacheCost}(C_t, C'_t) = |I(C'_t)| - \operatorname{LCP}\!\left(I(C_t), I(C'_t)\right).
+\mathrm{CacheCost}(C_t, C'_t) = |I(C'_t)| - \mathrm{LCP}\!\left(I(C_t), I(C'_t)\right).
 $$
 
-Here, $|I(C)|$ is the number of input tokens and $\operatorname{LCP}$ is the length of the longest common prefix of the two token sequences.
+Here, $|I(C)|$ is the number of input tokens and $\mathrm{LCP}$ is the length of the longest common prefix of the two token sequences.
 
 To combine this with the cost of generating the edit, let $\alpha$ weight an output token relative to an uncached input token. **Compaction Cost**, expressed in input-token equivalents, is then
 
