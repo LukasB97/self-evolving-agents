@@ -37,6 +37,10 @@ The lower-level `executeMutation` is useful for snapshots and examples without a
 
 ## Execution and failure
 
+The harness must request compaction while enough token capacity remains to generate the `evolve` call and include its result in the next request. A failed edit retains the previous State, so its call and error result consume additional capacity. Integrations must reserve headroom for these messages and any permitted retry, using the provider's input and output limits. The executor's byte limits do not measure this token budget.
+
+Before continuing after failure, the harness must check the remaining capacity and bound retries accordingly. If another attempt cannot fit, it must stop or invoke a defined fallback instead of submitting an oversized request. The choice of fallback belongs to the integrating harness; automatic truncation is not required by this mechanism.
+
 The function body is executed synchronously by QuickJS. Defaults are 250 ms of execution time, a 16 MiB guest heap, 256 KiB stack, 64 KiB source, and 1 MiB each for serialized input and output. Initialization of the WASM module is outside the execution deadline.
 
 There are no injected host IO functions or module loader. Node hosts the reference program; it never evaluates generated JavaScript itself. Runtime, context, and handles are disposed after each execution. Results cross the boundary as JSON and are validated on the host.
@@ -55,6 +59,8 @@ compactionCost = alpha * evolveCallTokens + cacheCost
 ```
 
 `alpha` weights an output token relative to an uncached input token, so compactionCost is in input-token equivalents. For price-based weighting, use the output-to-uncached-input token price ratio. Integrations must supply this weight; report it alongside evaluation costs.
+
+This metric excludes the input-processing cost of the model invocation that generates `evolve`, as well as cache reads, execution, and later inference. Include these in total task accounting, including any separate invocation used to request compaction. The metric is not the cost difference between editing and continuing without an edit.
 
 [estimateCacheCost](../src/cache-cost.ts) compares two token arrays and counts the longest identical prefix. The supplied sequences must describe complete serialized model inputs, including stable system/tool material and the mutation receipt where applicable. Comparing only `JSON.stringify(state)` would not measure provider prompt caching.
 
