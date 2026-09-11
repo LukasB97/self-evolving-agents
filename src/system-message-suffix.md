@@ -5,14 +5,16 @@ It is not the literal conversation the user sees.
 It is bijectively serializable through:
 
 ```ts
+type State = Message[];
+
+type Message =
+  | UserMessage
+  | AssistantMessage
+  | ToolMessage;
+
 type TextPart = {
   type: "text";
   text: string;
-};
-
-type ObjectPart = {
-  type: "object";
-  data: Record<string, unknown>;
 };
 
 type FilePart = {
@@ -21,39 +23,38 @@ type FilePart = {
   mimeType: string;
 };
 
+type UserMessage = {
+  role: "user";
+  parts: (TextPart | FilePart)[];
+};
+
 type ToolCallPart = {
   type: "toolCall";
   id: string;
   tool: string;
-  args: unknown;
+  args: Record<string, unknown>;
 };
 
-type ToolResultContentPart =
-  | TextPart
-  | ObjectPart
-  | FilePart;
+type AssistantMessage = {
+  role: "model";
+  parts: (TextPart | ToolCallPart)[];
+};
+
+type ObjectPart = {
+  type: "object";
+  data: Record<string, unknown>;
+};
 
 type ToolResultPart = {
   type: "toolResult";
   callId: string;
-  content: ToolResultContentPart[];
+  content: (TextPart | ObjectPart | FilePart)[];
 };
 
-type Message =
-  | {
-      role: "user";
-      parts: (TextPart | FilePart)[];
-    }
-  | {
-      role: "model";
-      parts: (TextPart | FilePart | ToolCallPart)[];
-    }
-  | {
-      role: "tool";
-      parts: ToolResultPart[];
-    };
-
-type State = Message[];
+type ToolMessage = {
+  role: "tool";
+  parts: ToolResultPart[];
+};
 ```
 
 The order and contents of this State correspond to the memory you see.

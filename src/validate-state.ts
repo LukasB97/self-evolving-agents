@@ -80,10 +80,14 @@ export function validateState(value: unknown, pendingCallId?: string): asserts v
           string(part.id, true);
           string(part.tool, true);
           if (!("args" in part)) fail("Tool call needs args");
+          object(part.args);
           if (seen.has(part.id)) fail("Duplicate tool call ID");
           seen.add(part.id);
           pending.add(part.id);
-        } else content(part, false);
+        } else {
+          if (message.role === "model" && part.type === "file") fail("Model messages contain text or tool calls");
+          content(part, false);
+        }
       }
     } else if (message.role === "tool") {
       for (const part of message.parts) {

@@ -41,4 +41,4 @@ Rewarding shorter state alone would encourage destructive forgetting. A candidat
 
 ## Results
 
-No model experiments or RL runs have been performed for this release. Automated checks cover executor behavior, failure atomicity, state validation, prefix-cost arithmetic, and reproduction of three synthetic examples.
+No model experiments or RL runs have been performed for this release. Automated checks cover executor behavior, failure atomicity, state validation, prefix-cost arithmetic, and reproduction of four synthetic examples.

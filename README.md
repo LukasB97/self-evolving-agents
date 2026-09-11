@@ -159,7 +159,7 @@ type SearchResults = {
 const messages: Message[] = state;
 ```
 
-The `results` field belongs to this particular tool's output format. State provides the surrounding message and part structure.
+The `results` field belongs to this particular tool's output format. State provides the surrounding message and part structure. The [runnable example](examples/04-web-search/) includes the input State, transformation, and expected result.
 
 ### Find the search call
 
@@ -167,7 +167,7 @@ We locate the earlier search by matching its query text.
 
 ```ts
 const call = messages
-  .flatMap(message => message.parts)
+  .flatMap<Message["parts"][number]>(message => message.parts)
   .find((part): part is ToolCallPart =>
     part.type === "toolCall" &&
     part.tool === "web_search" &&
@@ -184,7 +184,7 @@ We read the identifier from that call and use it to locate the corresponding res
 
 ```ts
 const result = messages
-  .flatMap(message => message.parts)
+  .flatMap<Message["parts"][number]>(message => message.parts)
   .find((part): part is ToolResultPart =>
     part.type === "toolResult" &&
     part.callId === call.id
@@ -268,21 +268,13 @@ An edit has two immediate token costs. The agent generates the `evolve` call, in
 Prompt caching can reuse computation for an unchanged beginning of the model input. Under an exact-prefix cache, an edit breaks reuse beyond the first changed position, even if later material remains identical. We call the number of resulting input tokens outside the reusable prefix the **Cache Cost**.
 
 $$
-\text{Cache Cost}
-=
-\text{resultingInputTokens}
--
-\text{reusablePrefixTokens}.
+\text{Cache Cost} = \text{resultingInputTokens} - \text{reusablePrefixTokens}.
 $$
 
 To combine this with the cost of generating the edit, let $\alpha$ weight an output token relative to an uncached input token. **Compaction Cost**, expressed in input-token equivalents, is then
 
 $$
-\text{Compaction Cost}
-=
-\alpha \cdot \text{evolveCallTokens}
-+
-\text{Cache Cost}.
+\text{Compaction Cost} = \alpha \cdot \text{evolveCallTokens} + \text{Cache Cost}.
 $$
 
 For price-based weighting, $\alpha$ is the ratio of the corresponding token prices. The reusable prefix is measured over the complete serialized model input, including system instructions and tool definitions. Actual reuse also depends on the provider's caching behavior and cache availability.
@@ -329,9 +321,20 @@ The repository provides a reference implementation of the editing mechanism. It 
 
 The prototype executes JavaScript in QuickJS with bounded time and memory and no external access. It checks the returned State and its tool-call relationships before accepting a replacement. Failed edits leave the previous State intact.
 
-Three hand-written examples demonstrate shortening an explanation, selecting exact evidence, and consolidating a corrected task. Automated checks cover execution, validation, failure isolation, cache-prefix arithmetic, and reproduction of those examples.
+Four hand-written examples demonstrate [shortening an explanation](examples/01-selective-compression/), [selecting exact evidence](examples/02-annotated-evidence/), [consolidating a corrected task](examples/03-current-task/), and [the web-search edit from Chapter 3](examples/04-web-search/). Automated checks cover execution, validation, failure isolation, cache-prefix arithmetic, and reproduction of those examples.
 
 The implementation currently has no live provider adapter, trained compaction policy, or measured agent-performance results. A provider integration must establish the correspondence between State and model-visible context and supply token and cache measurements.
+
+The [implementation types](src/state.ts) follow Chapter 3. The [validator](src/validate-state.ts) additionally requires JSON-compatible values so that State can cross the execution boundary without losing data. The [design notes](docs/design.md) describe the execution and integration requirements.
+
+With Node.js 22 or later and pnpm 11.19.0, install dependencies and run the checks,
+
+```sh
+pnpm install --frozen-lockfile
+pnpm check
+```
+
+Run `pnpm examples` to execute just the four examples.
 
 ### Reliable editing
 
@@ -353,7 +356,7 @@ Measure task success, preservation of evidence and constraints, repeated mistake
 
 ### Relation to existing work
 
-Existing approaches provide comparisons for both memory management and learned compaction. The accompanying [related-work notes](docs/related-work.md) discuss their connection to this proposal.
+[MemGPT](https://arxiv.org/abs/2310.08560) investigates model-directed management of memory tiers, while [AgentFold](https://arxiv.org/abs/2510.24699) condenses historical trajectories at different scales. These approaches motivate comparing what an agent can preserve and reorganize through each interface. [Context-Folding and FoldGRPO](https://arxiv.org/abs/2510.11967) study learning to manage context through branching and summarization; [FoldAct](https://arxiv.org/abs/2512.22733) addresses training when context folding changes subsequent observations. They provide relevant comparisons for training the compaction policy. The [related-work notes](docs/related-work.md) develop these connections further.
 
 The contribution to investigate is the combination of model-written code over structured context, direct preservation of existing material, and decisions informed by the cost of both generation and cache reuse. The reference implementation makes this mechanism concrete. Its reliability and benefits across long-running tasks remain to be established.
 
