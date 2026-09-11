@@ -8,102 +8,240 @@ Lukas Brückner · Concept paper and reference implementation
 
 Long-running agents must compact their context while preserving information needed for further work. We propose treating that context as editable working memory. The agent writes code that locates and transforms existing messages and their parts, preserving selected material exactly and generating only the edits and new content. Repeated compactions can develop a stable, revisable core of knowledge and working practices. We propose training these decisions through their effects on task performance and resource use, accounting for both generated code and prompt-cache reuse. A reference implementation demonstrates execution and validation; reliable model use and benefits across long tasks remain to be evaluated.
 
-## 1. Transcript and context
+## 1. Long-running agents and compaction
 
-The **transcript** records the user messages, model responses, and tool calls and results produced during a task. The **context** is the version of that record supplied to the model for its next response.
+As agents take on longer tasks, a single run can span hours or days. Throughout that run, user messages, model responses, tool calls, and tool results accumulate. We call this complete record the **history**, represented as a sequence of messages,
 
-A model can accept only a limited amount of context. To continue a long task, earlier context must therefore be reduced. This process is **compaction**. It changes the context while preserving the full transcript.
+$$
+H_t = (m_1, \ldots, m_t).
+$$
 
-The context is the agent's **working memory**. We propose that the agent express its compaction decisions as code. The code transforms the existing context, preserving selected content exactly without requiring the model to reproduce it. The result becomes the context for the next model call.
+At each invocation, the model receives a **context** $C_t$, also a sequence of messages, containing the information available for its next step. Early in a run, this context can include the entire history. As the run continues, the accumulated material can exceed the model’s context window.
 
-## 2. Representing working memory
+**Compaction** transforms the current context into a smaller representation from which the agent can continue,
 
-Suppose a code search returns four matches, but only two concern the password-reset behavior being investigated. Each match contains a file path, line number, and source text. A compacted result could keep those two records unchanged and add a note that the other two were removed.
+$$
+C'_t = f_t(C_t).
+$$
 
-To apply that selection, the application needs a representation in which the search result and its individual records can be located and changed. The reference implementation stores working memory as an ordered array of messages. Each message has a role and an ordered list of parts. We call this structured working memory **State**. System instructions and tool definitions remain outside it.
+It can summarize earlier work, remove unnecessary material, and retain relevant details. The resulting context may therefore contain both original and rewritten messages. Its usefulness depends on preserving the information needed for subsequent work.
 
-Parts distinguish text, structured data, and files. In the search example, the records are structured data and the added note is text. The following types define these parts; `Json` specifies the values supported in structured data and tool arguments.
+The compacted context becomes the basis for further model calls, leaving room for new information. The full history remains stored separately. Through repeated compactions, an agent can continue working beyond the amount of history that fits into a single context window.
+
+Compaction determines what the agent carries forward into its next steps. A detail removed now may be needed later, while unnecessary material occupies space that could support new work. How should an agent decide what to preserve, what to rewrite, and what to remove?
+
+A common approach replaces earlier context with a generated summary, sometimes retaining selected messages alongside it. We propose letting the agent express its compaction decisions as code that transforms the existing messages and their parts. Selected material can be preserved exactly, while the model generates only the transformation code and any new or rewritten content.
+
+## 2. Context as editable working memory
+
+We propose treating the agent’s context as working memory whose contents and organization it can change. During compaction, the agent decides which material to preserve, which passages to rewrite, and where information belongs in the context from which it will continue.
+
+Consider an agent working on a mathematical problem. It explores several approaches and proves two results. As this work unfolds, the proofs appear among calculations, conjectures, and unsuccessful attempts.
+
+The agent can bring the two results and their proofs together near the beginning of its context, following the problem statement. It can condense unsuccessful attempts into explanations of why they failed and retain the next approach to explore. The proofs themselves can be carried forward exactly.
+
+![First compaction: scattered proofs become an organized foundation alongside failed approaches and the next direction.](assets/compaction-01.svg)
+
+*Green blocks mark established knowledge. Block heights are schematic and do not represent token counts.*
+
+The resulting context gives the agent an organized basis for further work. Established results are available together, reasons for abandoning earlier approaches remain accessible, and space is available for new exploration.
+
+As the agent continues, new work is appended to this context. It proves a third result and finds a generalization of the first. At the next compaction, it can incorporate the generalization alongside the original result, place the third result with the existing proofs, and update the next step.
+
+![Second compaction: further work extends and revises the foundation while retaining the proofs.](assets/compaction-02.svg)
+
+Each compaction therefore edits a context that may already contain earlier edits. Material that remains useful can be preserved across these cycles, while new findings give the agent reasons to revise both its content and its organization. The context develops with the work.
+
+Our proposed mechanism lets the agent express these changes as code operating on the existing context. The next chapter explains how the agent can locate and transform that material while retaining selected content directly.
+
+## 3. Editing context through code
+
+The agent harness stores context as structured messages, each containing one or more parts. We call this representation the **State**. The model receives a provider-specific representation of that context. Although it may not see the objects and fields stored by the harness, it can recognize the corresponding content and relationships.
+
+Our proposal is to give the model the State format and let it write code that locates and edits the material it understands. The harness executes that code and uses the resulting State as the context for the next invocation.
+
+To make this concrete, we first define the structure that the editing code will operate on, then work through a change to an existing State.
+
+### Messages
+
+State is an ordered sequence of messages. Each message belongs to one of three variants, distinguished by its `role`.
 
 ```ts
-type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
+type State = Message[];
 
-type TextPart = { type: "text"; text: string };
-type ObjectPart = { type: "object"; data: Record<string, Json> };
-type FilePart = { type: "file"; data: string; mimeType: string };
+type Message =
+  | UserMessage
+  | AssistantMessage
+  | ToolMessage;
 ```
 
-A tool call records the tool's name and arguments. Its identifier connects it to the corresponding result. A result can contain several parts, allowing the search records and the agent's note to coexist within it.
+### User messages
+
+A user can provide text and files. We represent images and other file inputs as file parts containing the data and its media type.
+
+```ts
+type TextPart = {
+  type: "text";
+  text: string;
+};
+
+type FilePart = {
+  type: "file";
+  data: string;
+  mimeType: string;
+};
+
+type UserMessage = {
+  role: "user";
+  parts: (TextPart | FilePart)[];
+};
+```
+
+### Assistant messages
+
+The model can produce text and call tools. A tool-call part records the tool's name and arguments, together with an identifier that connects the call to its result.
 
 ```ts
 type ToolCallPart = {
   type: "toolCall";
   id: string;
   tool: string;
-  args: Json;
+  args: Record<string, unknown>;
 };
-type ToolResultContentPart = TextPart | ObjectPart | FilePart;
+
+type AssistantMessage = {
+  role: "model";
+  parts: (TextPart | ToolCallPart)[];
+};
+```
+
+### Tool messages
+
+A tool returns its result through a tool message. Each result refers to the corresponding call through `callId`.
+
+Results can contain text, structured objects, or files. We introduce an object part for structured data and allow each result to contain several content parts.
+
+```ts
+type ObjectPart = {
+  type: "object";
+  data: Record<string, unknown>;
+};
+
 type ToolResultPart = {
   type: "toolResult";
   callId: string;
-  content: ToolResultContentPart[];
+  content: (TextPart | ObjectPart | FilePart)[];
+};
+
+type ToolMessage = {
+  role: "tool";
+  parts: ToolResultPart[];
 };
 ```
 
-Messages group these parts by their role. Together, they define the complete [State type](src/state.ts) used by the prototype.
+This allows, for example, a tool result to hold structured search records alongside an explanatory text part.
+
+### Working with an existing State
+
+Given this structure, how would we edit an existing State? Suppose it contains a web search for *Northbridge Observatory restoration*, and we want to retain only the results from the observatory's own website.
+
+For this example, the search tool returns four records in a `results` array. Two belong to the observatory's website. Each record contains a title, URL, and excerpt.
 
 ```ts
-type Message =
-  | { role: "user"; parts: (TextPart | FilePart)[] }
-  | { role: "model"; parts: (TextPart | FilePart | ToolCallPart)[] }
-  | { role: "tool"; parts: ToolResultPart[] };
+type SearchResults = {
+  results: {
+    title: string;
+    url: string;
+    excerpt: string;
+  }[];
+};
 
-type State = Message[];
+const messages: Message[] = state;
 ```
 
-## 3. Editing State with code
+The `results` field belongs to this particular tool's output format. State provides the surrounding message and part structure.
 
-The agent chooses an edit from the context it receives, while the application must apply that edit to the State it stores. The material the agent understands must therefore correspond to the material being edited. For the supported State, the proposal requires a **bijection** between State and its model-visible representation: a unique, reversible correspondence preserving content and structure.
+### Find the search call
 
-The model-visible representation itself remains unspecified. Knowing the State types does not establish how their structure appears to the agent or which positions and identifiers it can directly recognize. The agent needs a way to express which material it means and have its location resolved in State.
-
-Code provides that means. Given the State type definitions, the agent writes a JavaScript function that searches for and transforms the intended material. It can combine content searches, filters, and structural relationships. For example, the function can find a tool call through its search query and use the stored ID to locate the result. The agent need not know that ID in advance. Similarly, it can select the first image after a recognized passage without specifying an array index. The function resolves these locations when it runs.
-
-The agent submits its function body through a tool named `evolve`. The application supplies the current State as its argument and uses the returned State as the replacement.
+We locate the earlier search by matching its query text.
 
 ```ts
-function evolve(state: State): State
-```
-
-Execution runs on a copy of State. The application checks the returned message structure and tool-call relationships before adopting it for continued generation. A failed execution or invalid result leaves the prior memory in place. These checks constrain execution and structural validity; the agent chooses the memory's content and organization.
-
-For the four search matches, the function body locates the result, filters its records, and appends the note.
-
-```js
-const result = state
+const call = messages
   .flatMap(message => message.parts)
-  .find(part =>
-    part.type === "toolResult" &&
-    part.content.some(item =>
-      item.type === "object" && Array.isArray(item.data.matches)
-    )
+  .find((part): part is ToolCallPart =>
+    part.type === "toolCall" &&
+    part.tool === "web_search" &&
+    typeof part.args.query === "string" &&
+    /Northbridge Observatory.*restoration/i.test(part.args.query)
   );
 
-const evidence = result.content.find(
-  item => item.type === "object" && Array.isArray(item.data.matches)
-);
-
-evidence.data.matches = evidence.data.matches.filter(
-  match => /^auth\/.*reset\.ts$/.test(match.path)
-);
-
-result.content.push({
-  type: "text",
-  text: "Agent memory edit: kept 2/4 password-reset matches verbatim."
-});
-return state;
+if (!call) throw new Error("Search call not found");
 ```
 
-The retained records come directly from State. The model generates the selection code and the note, and everything outside the edit stays intact. The [runnable example](examples/02-annotated-evidence/) includes the input and output. The same operations can gather related material across messages or reorganize most of the memory.
+### Find the search result
+
+We read the identifier from that call and use it to locate the corresponding result.
+
+```ts
+const result = messages
+  .flatMap(message => message.parts)
+  .find((part): part is ToolResultPart =>
+    part.type === "toolResult" &&
+    part.callId === call.id
+  );
+
+if (!result) throw new Error("Search result not found");
+```
+
+### Keep the relevant records
+
+We locate the object containing the search records, then use the tool's known output format to filter them by URL.
+
+```ts
+const evidence = result.content.find(
+  (part): part is ObjectPart =>
+    part.type === "object" &&
+    Array.isArray(part.data.results)
+);
+
+if (!evidence) throw new Error("Search records not found");
+
+const data = evidence.data as SearchResults;
+
+data.results = data.results.filter(record =>
+  /^https?:\/\/northbridge-observatory\.org(?:\/|$)/i.test(record.url)
+);
+```
+
+The retained records keep their original titles, URLs, and excerpts.
+
+### Explain the edit
+
+We add a separate text part alongside the structured data. This explains the selection while preserving the search result's JSON schema.
+
+```ts
+result.content.push({
+  type: "text",
+  text: "Agent memory edit: retained the two results from the observatory's website."
+});
+```
+
+The edit uses the query text to find the search, the call relationship to find its result, and the URLs to select records. Array positions and call identifiers are resolved from the existing State.
+
+### Letting the agent write the transformation
+
+These steps can form the body of a function that receives State and returns the edited State.
+
+```ts
+function evolve(state: State): State {
+  // Locate the search, filter its results, and add the note.
+  return state;
+}
+```
+
+We propose letting the agent write this function body and submit it through the `evolve` tool. The harness supplies the current State, executes the code on a copy, and validates the result before adopting it. If execution or validation fails, the previous State remains in place.
+
+The model can formulate these operations using content and relationships it recognizes in its context. It does not need to reconstruct the entire State or know stored positions and identifiers in advance. It generates the transformation code and any new text, while retained material comes directly from the existing State.
 
 ## 4. Compaction cost
 
@@ -123,16 +261,6 @@ Preserving existing material saves the output tokens needed to reproduce it. Pos
 ## 5. Memory across repeated compactions
 
 An agent continuing a task for hours or days can compact its memory many times. Each replacement becomes the basis for further work, whose results give the agent reasons to retain, refine, or correct that memory. Model weights remain fixed during this process.
-
-Consider an agent exploring a mathematical problem. It tries approaches, tests conjectures, and proves two results. The proofs are scattered among the attempts that produced them. A compaction brings the results and their proofs together after the problem statement, retaining the reasons earlier approaches failed and the next direction to explore.
-
-![First compaction: scattered proofs become an organized foundation alongside failed approaches and the next direction.](assets/compaction-01.svg)
-
-*Green blocks mark established knowledge. Block heights are schematic and do not represent token counts.*
-
-Working from this memory, the agent proves a third result and generalizes the first. A further compaction incorporates the generalization, places the third result with the earlier proofs, and updates the next step. The proofs can be retained exactly as their organization changes.
-
-![Second compaction: further work extends and revises the foundation while retaining the proofs.](assets/compaction-02.svg)
 
 The memory can also carry lessons about how to work. After unsuccessful proof attempts, the agent might retain a practice of searching for counterexamples earlier. If useful, that practice can continue to guide later attempts; contrary experience can prompt its revision.
 
