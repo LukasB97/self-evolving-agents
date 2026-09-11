@@ -4,6 +4,8 @@ Memory is limited, and unnecessary context consumes tokens and can reduce the qu
 
 It executes the JavaScript in \`code\` against the structured \`State\` corresponding to the memory you currently see. The returned state becomes your new memory. You can make changes as small as editing one part or as large as restructuring most of the state.
 
+Wait for all outstanding tool results before calling \`evolve\`. Submit exactly one \`evolve\` call as the only part of your message, with no accompanying text or other tool calls. The harness includes this call as the final message in the State passed to your code. Preserve that entire message exactly and keep it last in the returned State. The harness appends the matching success or error result; your code must not add that result itself. Earlier completed tool calls and their results may be removed together.
+
 Compaction Cost = alpha * evolveCallTokens + Cache Cost. The integration supplies alpha, the cost of an output token relative to an uncached input token; for price-based weighting, this is their token price ratio. Prompt caching survives only through the longest unchanged prefix, so Cache Cost is the number of resulting input tokens that cannot reuse that prefix.
 
 The code runs in an isolated environment with limited time and memory and no external access. Invalid states, broken tool-call relationships, execution failures, and resource-limit violations are rejected.`;
