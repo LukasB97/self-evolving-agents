@@ -295,31 +295,17 @@ This gives the organization illustrated in Chapter 2 an additional motivation. M
 
 Compaction Cost captures the immediate generation and uncached-input costs. Evaluating an edit requires following its effects through the rest of the task, including cache reads, execution, and subsequent inference. The agent must learn when an edit's benefit to continued work justifies its cost.
 
-## 5. Learning when and how to compact
+## 5. Learning how to compact
 
-The value of a compaction depends on the work that follows it. Removing evidence can make the next invocation cheaper while making a later step harder. Reorganizing results can cost tokens now and save repeated exploration afterward. The agent's decisions therefore need to account for both task performance and resource use over continued work.
+The `evolve` tool gives the agent a powerful way to edit its context. Choosing useful edits requires deciding what to preserve, revise, or remove, how often to compact, and when the benefit to further work justifies the cost.
 
-### Learning a compaction policy
+Compaction is already part of agent systems from providers such as Anthropic and OpenAI. Current systems use injected hints for compaction when the context is almost full. It might emerge that this timing is not preferable at all. We do not yet know which kind of compaction will work best.
 
-We call the strategy for deciding when to compact and what transformation to write the **compaction policy**. Its choices include the timing of an `evolve` call, the material to preserve or change, and the organization of the resulting context.
+We therefore deliberately give the agent broad control over its context and propose learning when and how to use it through reinforcement learning. The available actions are executable transformations of State, evaluated through task outcomes and total resource use, including generated code, prompt-cache reuse, and subsequent work.
 
-We propose training this policy with reinforcement learning, using subsequent task outcomes and total resource use. The agent performs a task, edits its context, and continues from the result. The effects of those decisions provide the training signal.
+Structural validation constrains which results can be accepted, but an accepted edit can still discard useful evidence or introduce misleading information. The contents and organization of memory remain largely the agent’s choice. The annotation in Chapter 3 illustrates one way to explain a change; it is not a required convention.
 
-A policy can learn to make frequent small edits, occasional larger reorganizations, or a combination of both. The objective should account for the complete task, including the cost of compaction itself. Rewarding shorter contexts alone would encourage removing information regardless of whether it remains useful.
-
-### Developing knowledge and working practices
-
-Across repeated compactions, the agent can carry forward both findings and lessons about how to work. In the mathematical example from Chapter 2, it might observe that searching for counterexamples would have avoided several unsuccessful proof attempts. It can retain that observation as guidance for later exploration.
-
-Such guidance becomes useful through its effect on subsequent decisions. The agent can apply it, observe the consequences, and refine it during a later compaction. New evidence can also give it reasons to revise an earlier conclusion or abandon a working practice.
-
-This is the sense in which the agent is **self-evolving**. Experience changes its persistent working context, and that context shapes its further work. Model weights remain fixed during an individual run. Reinforcement learning trains the policy across runs; within a run, the agent develops its knowledge and working practices by editing context.
-
-### Learning from delayed effects
-
-The consequences of an edit may emerge much later. A discarded detail may become relevant after several further compactions. An incorrect conclusion may be repeatedly retained and influence many subsequent steps.
-
-Training must therefore address delayed credit assignment and the fact that compaction changes the inputs from which the agent makes future decisions. Whether a policy learns reliable, useful ways to manage this process is an empirical question. The next chapter describes how to evaluate it.
+This openness allows training to discover effective approaches to compaction, including its timing, extent, and the structures or conventions it uses. These choices should develop through their consequences for continued work rather than be prescribed in advance.
 
 ## 6. Implementation and evaluation
 
