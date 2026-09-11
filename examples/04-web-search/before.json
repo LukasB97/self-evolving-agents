@@ -1,0 +1,107 @@
+[
+  {
+    "role": "user",
+    "parts": [
+      {
+        "type": "text",
+        "text": "Investigate how Northbridge Observatory was restored."
+      }
+    ]
+  },
+  {
+    "role": "model",
+    "parts": [
+      {
+        "type": "toolCall",
+        "id": "earlier_search",
+        "tool": "web_search",
+        "args": {
+          "query": "Northbridge Observatory opening hours"
+        }
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "parts": [
+      {
+        "type": "toolResult",
+        "callId": "earlier_search",
+        "content": [
+          {
+            "type": "object",
+            "data": {
+              "results": [
+                {
+                  "title": "Hours",
+                  "url": "https://northbridge-observatory.org/visit",
+                  "excerpt": "Open on weekends."
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "role": "model",
+    "parts": [
+      {
+        "type": "toolCall",
+        "id": "restoration_search",
+        "tool": "web_search",
+        "args": {
+          "query": "Northbridge Observatory restoration"
+        }
+      }
+    ]
+  },
+  {
+    "role": "tool",
+    "parts": [
+      {
+        "type": "toolResult",
+        "callId": "restoration_search",
+        "content": [
+          {
+            "type": "object",
+            "data": {
+              "results": [
+                {
+                  "title": "Restoring the dome",
+                  "url": "https://northbridge-observatory.org/restoration/dome",
+                  "excerpt": "The original dome mechanism was repaired and retained."
+                },
+                {
+                  "title": "Visitor guide",
+                  "url": "https://travel.example/observatory",
+                  "excerpt": "A guide to visiting the observatory."
+                },
+                {
+                  "title": "Restoration archive",
+                  "url": "https://northbridge-observatory.org/archive/restoration",
+                  "excerpt": "The restoration restored the original telescope mount."
+                },
+                {
+                  "title": "Restoration overview",
+                  "url": "https://northbridge-observatory.org.example/overview",
+                  "excerpt": "An independently published overview."
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "role": "model",
+    "parts": [
+      {
+        "type": "text",
+        "text": "Retain the observatory’s own restoration evidence."
+      }
+    ]
+  }
+]

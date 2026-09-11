@@ -33,7 +33,7 @@ The model must issue mutation alone at this boundary. Streaming harnesses must f
 
 Only the in-flight call is protected. Older mutation calls and receipts can be removed together like any completed roundtrip. Keeping the active call is a local protocol decision, not a restriction on the broader research idea.
 
-The lower-level `executeMutation` is useful for snapshots and examples without an active call. It accepts a completed state and returns a validated replacement. The three illustrative snippets target those snapshots.
+The lower-level `executeMutation` is useful for snapshots and examples without an active call. It accepts a completed state and returns a validated replacement. The four illustrative snippets target those snapshots.
 
 ## Execution and failure
 

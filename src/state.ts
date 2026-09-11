@@ -1,25 +1,51 @@
-/** The JSON-compatible subset supported by this reference implementation. */
-export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
+/** State schema shared with Chapter 3. Runtime validation enforces JSON-compatible values. */
+export type State = Message[];
 
-export type TextPart = { type: "text"; text: string };
-export type ObjectPart = { type: "object"; data: Record<string, Json> };
-export type FilePart = { type: "file"; data: string; mimeType: string };
+export type Message =
+  | UserMessage
+  | AssistantMessage
+  | ToolMessage;
+
+export type TextPart = {
+  type: "text";
+  text: string;
+};
+
+export type FilePart = {
+  type: "file";
+  data: string;
+  mimeType: string;
+};
+
+export type UserMessage = {
+  role: "user";
+  parts: (TextPart | FilePart)[];
+};
+
 export type ToolCallPart = {
   type: "toolCall";
   id: string;
   tool: string;
-  args: Json;
+  args: Record<string, unknown>;
 };
-export type ToolResultContentPart = TextPart | ObjectPart | FilePart;
+
+export type AssistantMessage = {
+  role: "model";
+  parts: (TextPart | ToolCallPart)[];
+};
+
+export type ObjectPart = {
+  type: "object";
+  data: Record<string, unknown>;
+};
+
 export type ToolResultPart = {
   type: "toolResult";
   callId: string;
-  content: ToolResultContentPart[];
+  content: (TextPart | ObjectPart | FilePart)[];
 };
-export type Message =
-  | { role: "user"; parts: (TextPart | FilePart)[] }
-  | { role: "model"; parts: (TextPart | FilePart | ToolCallPart)[] }
-  | { role: "tool"; parts: ToolResultPart[] };
 
-/** Agent-owned working memory. The visible transcript is stored separately. */
-export type State = Message[];
+export type ToolMessage = {
+  role: "tool";
+  parts: ToolResultPart[];
+};

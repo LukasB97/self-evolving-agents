@@ -4,11 +4,18 @@
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "strict": true,
-    "types": ["node"],
+    "types": [
+      "node"
+    ],
     "noUncheckedIndexedAccess": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["src/**/*.ts", "scripts/**/*.ts", "tests/**/*.ts"]
+  "include": [
+    "src/**/*.ts",
+    "scripts/**/*.ts",
+    "tests/**/*.ts",
+    "examples/**/*.ts"
+  ]
 }
