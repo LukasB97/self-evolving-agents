@@ -241,6 +241,8 @@ function evolve(state: State): State {
 
 We propose letting the agent write this function body and submit it through the `evolve` tool. The harness supplies the current State, executes the code on a copy, and validates the result before adopting it. If execution or validation fails, the previous State remains in place.
 
+The generated function body describes the transformation $f_t$ from Chapter 1. The harness applies it to the structured representation of $C_t$, producing the State that represents $C'_t$.
+
 The model can formulate these operations using content and relationships it recognizes in its context. It does not need to reconstruct the entire State or know stored positions and identifiers in advance. It generates the transformation code and any new text, while retained material comes directly from the existing State.
 
 ## 4. Agent-controlled compaction
@@ -267,9 +269,13 @@ An edit has two immediate token costs. The agent generates the `evolve` call, in
 
 Prompt caching can reuse computation for an unchanged beginning of the model input. Under an exact-prefix cache, an edit breaks reuse beyond the first changed position, even if later material remains identical. We call the number of resulting input tokens outside the reusable prefix the **Cache Cost**.
 
+Let $I(C)$ denote the complete serialized and tokenized model input for context $C$, including system instructions and tool definitions. Under an exact-prefix model,
+
 $$
-\text{Cache Cost} = \text{resultingInputTokens} - \text{reusablePrefixTokens}.
+\operatorname{CacheCost}(C_t, C'_t) = |I(C'_t)| - \operatorname{LCP}\!\left(I(C_t), I(C'_t)\right).
 $$
+
+Here, $|I(C)|$ is the number of input tokens and $\operatorname{LCP}$ is the length of the longest common prefix of the two token sequences.
 
 To combine this with the cost of generating the edit, let $\alpha$ weight an output token relative to an uncached input token. **Compaction Cost**, expressed in input-token equivalents, is then
 
@@ -277,7 +283,9 @@ $$
 \text{Compaction Cost} = \alpha \cdot \text{evolveCallTokens} + \text{Cache Cost}.
 $$
 
-For price-based weighting, $\alpha$ is the ratio of the corresponding token prices. The reusable prefix is measured over the complete serialized model input, including system instructions and tool definitions. Actual reuse also depends on the provider's caching behavior and cache availability.
+For price-based weighting, $\alpha$ is the ratio of the corresponding token prices. Actual reuse also depends on the provider's caching behavior and cache availability.
+
+This metric accounts for generating the `evolve` call and processing the resulting input outside the reusable prefix. It excludes the input-processing cost of the model invocation that generates the call, cache reads, execution, and later inference. Those costs belong in the total task accounting. The metric is not a cost difference against a hypothetical continuation without compaction.
 
 ### Choosing the extent of an edit
 
