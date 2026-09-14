@@ -180,11 +180,11 @@ The prototype has no live provider adapter, trained compaction policy, or measur
 
 ### Evaluation
 
-First, use controlled tasks to test whether the model translates its understanding of context into edits of the intended State values: locating the correct tool call, selecting records, preserving exact passages, and retaining required relationships. Include similar queries, repeated content, and later corrections so that the first matching string is not necessarily the right target. Measure structural validity and correct targeting separately; a valid edit can still change the wrong result or remove a necessary detail.
+We have not yet established whether this mechanism improves task performance. We expect its benefits to be most apparent in complex tasks spanning multiple compactions, where the agent repeatedly builds on earlier work and revises its understanding. Editable memory could help useful knowledge and working practices develop across those cycles.
 
-Then compare task success and total resource use under the same base model, tasks, tools, context limit, and total inference budget. Compare summary-based compaction, fixed structured edit operations, prompted JavaScript transformations, and an RL-trained policy. Summaries should also be allowed to organize knowledge and working practices, so the comparison measures the contribution of executable editing. Tasks should require earlier evidence, corrections, and learned practices across several compactions; shorter tasks can also test whether reorganization helps before the context window fills.
+To test that expectation, we want to study complete tasks, both interactive tasks with substantial user input and autonomous work. Success should be judged by whether the agent solves the task. Tests that ask whether selected details survive a compaction can be tailored to favor our mechanism; they do not by themselves establish whether those details actually help with the work that follows.
 
-Measure preservation of evidence and constraints, repeated mistakes, total tokens, latency, and actual cache use alongside task success. Retain the history, successive States, and generated transformations to trace later failures to earlier edits. Report training resources and cost weights separately. The [evaluation notes](docs/evaluation.md) develop this plan.
+We are currently developing and running these evaluations and will share an update soon.
 
 ### Related work
 
