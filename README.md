@@ -56,63 +56,126 @@ Our proposed mechanism lets the agent express these changes as code operating on
 
 ## 3. Editing context through code
 
-The agent can edit the structured context that its harness already uses for model calls. For a concrete format, we use the OpenAI Responses API's [input items](https://developers.openai.com/api/reference/typescript/resources/responses), represented by `ResponseInputItem` in the TypeScript SDK. **State** is an ordered array of these items.
+The agent harness stores context as structured items, including messages, function calls, and function outputs. We call this representation the **State**. The model receives a provider-specific representation of that context. Although it may not see the objects and fields stored by the harness, it can recognize the corresponding content and relationships.
 
-Messages carry content such as text, images, and files. Function calls and their outputs are separate items, linked by `call_id`. The harness supplies these type definitions to the agent so it can write code against the stored structure, locating material through content and relationships it recognizes from its context.
+Our proposal is to give the model the State format and let it write code that locates and edits the material it understands. The harness executes that code and uses the resulting State as the context for the next invocation.
 
-### Editing a search result
+To make this concrete, we first identify the types that the editing code will operate on, then work through a change to an existing State.
 
-Suppose the context contains a call to a harness-defined `web_search` function for *Northbridge Observatory restoration*. Its output is a JSON string with four search records, two from the observatory's own website. This is a custom function with a known result schema; OpenAI's built-in web search has a different item format.
+### State types
 
-The following transformation finds the call by its query, follows its `call_id`, and filters the records by URL. It assumes one matching call and a result conforming to the search tool's schema.
+We use the [OpenAI Responses API types](https://developers.openai.com/api/reference/typescript/resources/responses) from the TypeScript SDK. State is an ordered sequence of input items. Messages contain text or other content parts; function calls and their outputs are separate items, connected by `call_id`.
 
 ```ts
-import type { ResponseInputItem } from "openai/resources/responses/responses";
+import type {
+  ResponseInputItem,
+  ResponseFunctionToolCall,
+} from "openai/resources/responses/responses";
 
 type State = ResponseInputItem[];
+```
 
+Function-call arguments are JSON strings. Function outputs can be strings or lists of text, image, and file parts. This allows, for example, a tool result to hold JSON search records alongside an explanatory text part.
+
+### Working with an existing State
+
+Given this structure, how would we edit an existing State? Suppose it contains a web search for *Northbridge Observatory restoration*, and we want to retain only the results from the observatory's own website.
+
+For this example, a custom search function returns a JSON string containing four records in a `results` array. Two belong to the observatory's website. Each record contains a title, URL, and excerpt.
+
+```ts
 type SearchResults = {
-  results: { title: string; url: string; excerpt: string }[];
+  results: {
+    title: string;
+    url: string;
+    excerpt: string;
+  }[];
 };
 
-function evolve(state: State): State {
-  const call = state.find(item => {
-    if (item.type !== "function_call" || item.name !== "web_search") return false;
-    const args = JSON.parse(item.arguments);
-    return args.query === "Northbridge Observatory restoration";
-  });
-  if (!call || call.type !== "function_call") throw new Error("Search call not found");
+const items: State = state;
+```
 
-  const result = state.find(item =>
-    item.type === "function_call_output" && item.call_id === call.call_id
-  );
-  if (!result || result.type !== "function_call_output" || typeof result.output !== "string") {
-    throw new Error("Search result not found or not a string");
+The `results` field belongs to this particular tool's output format. State provides the surrounding item structure. The [runnable example](examples/04-web-search/) demonstrates the same edit in the prototype's custom State format.
+
+### Find the search call
+
+We locate the earlier search by matching its query text.
+
+```ts
+const call = items.find((item): item is ResponseFunctionToolCall => {
+  if (item.type !== "function_call" || item.name !== "web_search") return false;
+  const args = JSON.parse(item.arguments);
+  return typeof args.query === "string" &&
+    /Northbridge Observatory.*restoration/i.test(args.query);
+});
+
+if (!call) throw new Error("Search call not found");
+```
+
+### Find the search result
+
+We read the identifier from that call and use it to locate the corresponding result.
+
+```ts
+const result = items.find(
+  (item): item is ResponseInputItem.FunctionCallOutput =>
+    item.type === "function_call_output" &&
+    item.call_id === call.call_id
+);
+
+if (!result) throw new Error("Search result not found");
+```
+
+### Keep the relevant records
+
+We parse the JSON string containing the search records, then use the tool's known output format to filter them by URL.
+
+```ts
+if (typeof result.output !== "string") throw new Error("Expected a JSON string");
+
+const data = JSON.parse(result.output) as SearchResults;
+
+if (!Array.isArray(data.results)) throw new Error("Search records not found");
+
+data.results = data.results.filter(record =>
+  /^https?:\/\/northbridge-observatory\.org(?:\/|$)/i.test(record.url)
+);
+```
+
+The retained records keep their original titles, URLs, and excerpts. Serializing the JSON again may change its whitespace and escaping, but preserves these string values.
+
+### Explain the edit
+
+We serialize the selected records and add a separate text part alongside them. This explains the selection while preserving the search result's JSON schema.
+
+```ts
+result.output = [
+  { type: "input_text", text: JSON.stringify(data) },
+  {
+    type: "input_text",
+    text: "Agent memory edit: retained the two results from the observatory's website."
   }
+];
+```
 
-  const data: SearchResults = JSON.parse(result.output);
-  data.results = data.results.filter(record =>
-    /^https?:\/\/northbridge-observatory\.org(?:\/|$)/i.test(record.url)
-  );
-  result.output = [
-    { type: "input_text", text: JSON.stringify(data) },
-    { type: "input_text", text: "Agent memory edit: retained the observatory's own results." }
-  ];
+The edit uses the query text to find the search, the call relationship to find its result, and the URLs to select records. Array positions and call identifiers are resolved from the existing State.
+
+### Letting the agent write the transformation
+
+These steps can form the body of a function that receives State and returns the edited State.
+
+```ts
+function evolve(state: State): State {
+  // Locate the search, filter its results, and add the note.
   return state;
 }
 ```
 
-The retained titles, URLs, and excerpts keep their original string values. JSON is parsed and serialized by the code, so whitespace and escaping in the enclosing JSON may change. The selection note is a separate text part in the function output, leaving the search data's schema intact. Other items remain unchanged.
+We propose letting the agent write this function body and submit it through the `evolve` tool. The harness supplies the current State, executes the code on a copy, and validates the result before adopting it. If execution or validation fails, the previous State remains in place.
 
-The model generates the transformation and the note. It does not reproduce the retained evidence or need to know array positions and stored identifiers in advance. The [checked example](tests/fixtures/openai-paper-example.ts) uses the SDK types; the [paper tests](tests/paper-example.test.ts) verify selection and preservation with synthetic data.
+The generated function body describes the transformation $f_t$ from Chapter 1. The harness applies it to the structured representation of $C_t$, producing the State that represents $C'_t$.
 
-### Applying the transformation
-
-The agent submits the JavaScript function body through `evolve`; the import and type declarations above describe its environment. The harness executes it on a copy of State and validates the result before adopting it, as described in Chapter 4.
-
-This design uses [manually managed conversation state](https://developers.openai.com/api/docs/guides/conversation-state): the edited items form the next request's `input`, with system instructions and tool definitions supplied separately. The harness must not also replay the unedited history through `previous_response_id` or a server-managed conversation.
-
-Using API types does not make every field editable text. Required [reasoning items](https://developers.openai.com/api/docs/guides/function-calling) must accompany tool continuations; opaque payloads must be carried forward unchanged according to the API's replay rules. Provider acceptance and correct targeting still require evaluation. The current prototype uses a smaller custom State format, described in Chapter 6.
+The model can formulate these operations using content and relationships it recognizes in its context. It does not need to reconstruct the entire State or know stored positions and identifiers in advance. It generates the transformation code and any new text, while retained material comes directly from the existing State.
 
 ## 4. Agent-controlled compaction
 
@@ -120,9 +183,9 @@ To make context editing available to the agent, the harness provides the State t
 
 ### Connecting the context to State
 
-We place a suffix at the end of the system message, immediately before the working context in the intended input layout. It contains the types for the chosen State representation and explains that the following context corresponds to this structure. It also establishes that the context may contain earlier edits and that the agent can manage it independently of the full history.
+We place a suffix at the end of the system message, immediately before the working context in the intended input layout. It contains the State types from Chapter 3 and explains that the following context corresponds to this structure. It also establishes that the context may contain earlier edits and that the agent can manage it independently of the full history.
 
-The provider integration must preserve supported content, order, and tool relationships when constructing model input from State. With the API-native representation in Chapter 3, State already consists of input items; the harness must still follow the API's replay rules. The types give the model a structure in which to express edits. Content searches and structural relationships let the code resolve the intended locations during execution.
+For the supported content, the provider integration must establish a reversible correspondence between State and the model-visible representation, preserving content, order, and tool relationships. The types give the model a structure in which to express edits. Content searches and structural relationships let the code resolve the intended locations during execution.
 
 ### Executing an edit
 
@@ -184,11 +247,11 @@ The repository provides a reference implementation of the editing mechanism. It 
 
 The prototype executes JavaScript in QuickJS with bounded time and memory and no external access. It checks the returned State and its tool-call relationships before accepting a replacement. Failed edits leave the previous State intact.
 
-Four hand-written examples demonstrate [shortening an explanation](examples/01-selective-compression/), [selecting exact evidence](examples/02-annotated-evidence/), [consolidating a corrected task](examples/03-current-task/), and [a web-search edit](examples/04-web-search/) in the prototype format. Automated checks cover execution, validation, failure isolation, cache-prefix arithmetic, and reproduction of those examples.
+Four hand-written examples demonstrate [shortening an explanation](examples/01-selective-compression/), [selecting exact evidence](examples/02-annotated-evidence/), [consolidating a corrected task](examples/03-current-task/), and [the web-search edit from Chapter 3](examples/04-web-search/). Automated checks cover execution, validation, failure isolation, cache-prefix arithmetic, and reproduction of those examples.
 
 The implementation currently has no live provider adapter, trained compaction policy, or measured agent-performance results. A provider integration must establish the correspondence between State and model-visible context and supply token and cache measurements.
 
-The [implementation types](src/state.ts) define the prototype's custom message-and-part format. They do not yet implement the OpenAI representation used in Chapter 3; adopting it in the runtime requires updating validation and the system suffix as well as adding a provider integration. The [validator](src/validate-state.ts) additionally requires JSON-compatible values so that State can cross the execution boundary without losing data. The [design notes](docs/design.md) describe the execution and integration requirements.
+The [implementation types](src/state.ts) still use the prototype's custom format rather than the OpenAI types used in Chapter 3. The [validator](src/validate-state.ts) additionally requires JSON-compatible values so that State can cross the execution boundary without losing data. The [design notes](docs/design.md) describe the execution and integration requirements.
 
 With Node.js 22 or later and pnpm 11.19.0, install dependencies and run the checks,
 
