@@ -56,96 +56,32 @@ Our proposed mechanism lets the agent express these changes as code operating on
 
 ## 3. Editing context through code
 
-The agent harness stores context as structured messages, each containing one or more parts. We call this representation the **State**. The model receives a provider-specific representation of that context. Although it may not see the objects and fields stored by the harness, it can recognize the corresponding content and relationships.
+The agent harness stores context as structured items, including messages, function calls, and function outputs. We call this representation the **State**. The model receives a provider-specific representation of that context. Although it may not see the objects and fields stored by the harness, it can recognize the corresponding content and relationships.
 
 Our proposal is to give the model the State format and let it write code that locates and edits the material it understands. The harness executes that code and uses the resulting State as the context for the next invocation.
 
-To make this concrete, we first define the structure that the editing code will operate on, then work through a change to an existing State.
+To make this concrete, we first identify the types that the editing code will operate on, then work through a change to an existing State.
 
-### Messages
+### State types
 
-State is an ordered sequence of messages. Each message belongs to one of three variants, distinguished by its `role`.
-
-```ts
-type State = Message[];
-
-type Message =
-  | UserMessage
-  | AssistantMessage
-  | ToolMessage;
-```
-
-### User messages
-
-A user can provide text and files. We represent images and other file inputs as file parts containing the data and its media type.
+We use the [OpenAI Responses API types](https://developers.openai.com/api/reference/typescript/resources/responses) from the TypeScript SDK. State is an ordered sequence of input items. Messages contain text or other content parts; function calls and their outputs are separate items, connected by `call_id`.
 
 ```ts
-type TextPart = {
-  type: "text";
-  text: string;
-};
+import type {
+  ResponseInputItem,
+  ResponseFunctionToolCall,
+} from "openai/resources/responses/responses";
 
-type FilePart = {
-  type: "file";
-  data: string;
-  mimeType: string;
-};
-
-type UserMessage = {
-  role: "user";
-  parts: (TextPart | FilePart)[];
-};
+type State = ResponseInputItem[];
 ```
 
-### Assistant messages
-
-The model can produce text and call tools. A tool-call part records the tool's name and arguments, together with an identifier that connects the call to its result.
-
-```ts
-type ToolCallPart = {
-  type: "toolCall";
-  id: string;
-  tool: string;
-  args: Record<string, unknown>;
-};
-
-type AssistantMessage = {
-  role: "model";
-  parts: (TextPart | ToolCallPart)[];
-};
-```
-
-### Tool messages
-
-A tool returns its result through a tool message. Each result refers to the corresponding call through `callId`.
-
-Results can contain text, structured objects, or files. We introduce an object part for structured data and allow each result to contain several content parts.
-
-```ts
-type ObjectPart = {
-  type: "object";
-  data: Record<string, unknown>;
-};
-
-type ToolResultPart = {
-  type: "toolResult";
-  callId: string;
-  content: (TextPart | ObjectPart | FilePart)[];
-};
-
-type ToolMessage = {
-  role: "tool";
-  parts: ToolResultPart[];
-};
-```
-
-This allows, for example, a tool result to hold structured search records alongside an explanatory text part.
+Function-call arguments are JSON strings. Function outputs can be strings or lists of text, image, and file parts. This allows, for example, a tool result to hold JSON search records alongside an explanatory text part.
 
 ### Working with an existing State
 
 Given this structure, how would we edit an existing State? Suppose it contains a web search for *Northbridge Observatory restoration*, and we want to retain only the results from the observatory's own website.
 
-For this example, the search tool returns four records in a `results` array. Two belong to the observatory's website. Each record contains a title, URL, and excerpt.
+For this example, a custom search function returns a JSON string containing four records in a `results` array. Two belong to the observatory's website. Each record contains a title, URL, and excerpt.
 
 ```ts
 type SearchResults = {
@@ -156,24 +92,22 @@ type SearchResults = {
   }[];
 };
 
-const messages: Message[] = state;
+const items: State = state;
 ```
 
-The `results` field belongs to this particular tool's output format. State provides the surrounding message and part structure. The [runnable example](examples/04-web-search/) includes the input State, transformation, and expected result.
+The `results` field belongs to this particular tool's output format. State provides the surrounding item structure. The [runnable example](examples/04-web-search/) demonstrates the same edit in the prototype's custom State format.
 
 ### Find the search call
 
 We locate the earlier search by matching its query text.
 
 ```ts
-const call = messages
-  .flatMap<Message["parts"][number]>(message => message.parts)
-  .find((part): part is ToolCallPart =>
-    part.type === "toolCall" &&
-    part.tool === "web_search" &&
-    typeof part.args.query === "string" &&
-    /Northbridge Observatory.*restoration/i.test(part.args.query)
-  );
+const call = items.find((item): item is ResponseFunctionToolCall => {
+  if (item.type !== "function_call" || item.name !== "web_search") return false;
+  const args = JSON.parse(item.arguments);
+  return typeof args.query === "string" &&
+    /Northbridge Observatory.*restoration/i.test(args.query);
+});
 
 if (!call) throw new Error("Search call not found");
 ```
@@ -183,47 +117,45 @@ if (!call) throw new Error("Search call not found");
 We read the identifier from that call and use it to locate the corresponding result.
 
 ```ts
-const result = messages
-  .flatMap<Message["parts"][number]>(message => message.parts)
-  .find((part): part is ToolResultPart =>
-    part.type === "toolResult" &&
-    part.callId === call.id
-  );
+const result = items.find(
+  (item): item is ResponseInputItem.FunctionCallOutput =>
+    item.type === "function_call_output" &&
+    item.call_id === call.call_id
+);
 
 if (!result) throw new Error("Search result not found");
 ```
 
 ### Keep the relevant records
 
-We locate the object containing the search records, then use the tool's known output format to filter them by URL.
+We parse the JSON string containing the search records, then use the tool's known output format to filter them by URL.
 
 ```ts
-const evidence = result.content.find(
-  (part): part is ObjectPart =>
-    part.type === "object" &&
-    Array.isArray(part.data.results)
-);
+if (typeof result.output !== "string") throw new Error("Expected a JSON string");
 
-if (!evidence) throw new Error("Search records not found");
+const data = JSON.parse(result.output) as SearchResults;
 
-const data = evidence.data as SearchResults;
+if (!Array.isArray(data.results)) throw new Error("Search records not found");
 
 data.results = data.results.filter(record =>
   /^https?:\/\/northbridge-observatory\.org(?:\/|$)/i.test(record.url)
 );
 ```
 
-The retained records keep their original titles, URLs, and excerpts.
+The retained records keep their original titles, URLs, and excerpts. Serializing the JSON again may change its whitespace and escaping, but preserves these string values.
 
 ### Explain the edit
 
-We add a separate text part alongside the structured data. This explains the selection while preserving the search result's JSON schema.
+We serialize the selected records and add a separate text part alongside them. This explains the selection while preserving the search result's JSON schema.
 
 ```ts
-result.content.push({
-  type: "text",
-  text: "Agent memory edit: retained the two results from the observatory's website."
-});
+result.output = [
+  { type: "input_text", text: JSON.stringify(data) },
+  {
+    type: "input_text",
+    text: "Agent memory edit: retained the two results from the observatory's website."
+  }
+];
 ```
 
 The edit uses the query text to find the search, the call relationship to find its result, and the URLs to select records. Array positions and call identifiers are resolved from the existing State.
@@ -319,7 +251,7 @@ Four hand-written examples demonstrate [shortening an explanation](examples/01-s
 
 The implementation currently has no live provider adapter, trained compaction policy, or measured agent-performance results. A provider integration must establish the correspondence between State and model-visible context and supply token and cache measurements.
 
-The [implementation types](src/state.ts) follow Chapter 3. The [validator](src/validate-state.ts) additionally requires JSON-compatible values so that State can cross the execution boundary without losing data. The [design notes](docs/design.md) describe the execution and integration requirements.
+The [implementation types](src/state.ts) still use the prototype's custom format rather than the OpenAI types used in Chapter 3. The [validator](src/validate-state.ts) additionally requires JSON-compatible values so that State can cross the execution boundary without losing data. The [design notes](docs/design.md) describe the execution and integration requirements.
 
 With Node.js 22 or later and pnpm 11.19.0, install dependencies and run the checks,
 
