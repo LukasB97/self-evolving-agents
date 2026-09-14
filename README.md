@@ -1,11 +1,5 @@
 # Self-Evolving Agents
 
-**A compaction mechanism for agents that manage their own memory**
-
-Lukas Brückner · Concept paper and reference implementation
-
-## Abstract
-
 Long-running agents must compact their context while preserving information needed for further work. We propose treating that context as editable working memory. The agent writes code that locates and transforms existing messages and their parts, preserving selected material exactly and generating only the edits and new content. Repeated compactions can develop a stable, revisable core of knowledge and working practices. We propose training these decisions through their effects on task performance and resource use, accounting for both generated code and prompt-cache reuse. A reference implementation demonstrates execution and validation; reliable model use and benefits across long tasks remain to be evaluated.
 
 ## 1. Long-running agents and compaction
