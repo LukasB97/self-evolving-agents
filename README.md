@@ -121,7 +121,7 @@ function evolve(state: State): State {
 
 The retained records keep their original titles, URLs, and excerpts. Serializing the JSON again may change its whitespace and escaping, but preserves these string values. The [runnable example](examples/04-web-search/) demonstrates the same edit in the prototype's custom State format.
 
-We propose letting the agent write this function body and submit it through the `evolve` tool.
+We propose letting the agent write this function body and submit it through the `evolve` tool. It expresses the compaction described in Chapter 1: the harness transforms the current State into the State representing the compacted context.
 
 The model can formulate these operations using content and relationships it recognizes in its context. It does not need to reconstruct the entire State or know stored positions and identifiers in advance. It generates the transformation code and any new text, while retained material comes directly from the existing State.
 
@@ -147,9 +147,18 @@ The agent can call `evolve` during its work. The harness can also request a comp
 
 An edit has two immediate token costs. The agent generates the `evolve` call, including its code and any new content. The next model invocation then processes the resulting context.
 
-Prompt caching can reuse computation for an unchanged beginning of the model input, including system instructions and tool definitions. Under an exact-prefix cache, an edit breaks reuse beyond the first changed position, even if later material remains identical. Actual reuse also depends on the provider's caching behavior and cache availability.
+Prompt caching can reuse computation for an unchanged beginning of the model input. Under an exact-prefix cache, an edit breaks reuse beyond the first changed position, even if later material remains identical. Compare the complete serialized and tokenized model inputs before and after the edit, including system instructions and tool definitions. Their longest identical initial token sequence is the reusable prefix.
 
-The [design notes](docs/design.md#cache-accounting) define a cost measure that weights generated tokens relative to input tokens outside the reusable prefix. This measures immediate compaction cost, not savings against continuing without compaction. The input needed to generate the edit, cache reads, execution, and later inference belong in total task accounting.
+**Cache Cost** counts the tokens in the new input outside that prefix. **Compaction Cost** adds the cost of generating the `evolve` call, including its code and new content:
+
+```text
+Cache Cost = tokens in the new input − tokens in the reusable prefix
+Compaction Cost = generated evolve-call tokens × output-token weight + Cache Cost
+```
+
+The output-token weight expresses the cost of one output token relative to one uncached input token. For price-based weighting, divide the output-token price by the uncached-input-token price. Compaction Cost is therefore expressed in input-token equivalents. Actual reuse also depends on the provider's caching behavior and cache availability.
+
+This measure excludes the input-processing cost of the invocation generating `evolve`, cache reads, execution, and later inference. Those belong in total task accounting. It is not a cost difference against continuing without compaction. The [design notes](docs/design.md#cache-accounting) describe the implementation and integration requirements.
 
 ### Choosing the extent of an edit
 
@@ -171,11 +180,25 @@ Memory structures and editing conventions should likewise emerge through trainin
 
 ## 6. Implementation and evaluation
 
-The reference implementation executes JavaScript on a copy of State and validates the result before accepting a replacement. It currently has no live provider adapter, trained compaction policy, or measured agent-performance results. The [design notes](docs/design.md) describe the prototype's custom State format and execution and integration requirements.
+The reference implementation executes JavaScript in QuickJS with bounded time and memory and no external access. It checks the resulting State and tool-call relationships before accepting a replacement; failed edits leave the previous State intact. Four hand-written examples demonstrate [shortening an explanation](examples/01-selective-compression/), [selecting exact evidence](examples/02-annotated-evidence/), [consolidating a corrected task](examples/03-current-task/), and [the web-search edit from Chapter 3](examples/04-web-search/). Automated checks cover execution, validation, failure isolation, cache-prefix arithmetic, and reproduction of these examples.
 
-Evaluation must first establish whether agents edit the intended content and preserve information needed for further work. Structural validity alone does not establish that an edit is correct or useful.
+The prototype has no live provider adapter, trained compaction policy, or measured agent-performance results. Its custom [State format](src/state.ts) differs from the OpenAI types in Chapter 3, and the [validator](src/validate-state.ts) requires JSON-compatible values to preserve data across the execution boundary. A provider integration must establish the correspondence between State and model-visible context and supply token and cache measurements. The [design notes](docs/design.md) describe the execution and integration requirements.
 
-To assess benefits across continued work, compare task success and total resource use against other compaction methods under the same model, tasks, tools, context limit, and inference budget. Summary-based methods should also be allowed to organize knowledge and working practices, so the comparison measures the contribution of executable editing. The [related-work notes](docs/related-work.md) discuss relevant approaches and comparisons.
+### Evaluation
+
+First, use controlled tasks to test whether the model translates its understanding of context into edits of the intended State values: locating the correct tool call, selecting records, preserving exact passages, and retaining required relationships. Include similar queries, repeated content, and later corrections so that the first matching string is not necessarily the right target. Measure structural validity and correct targeting separately; a valid edit can still change the wrong result or remove a necessary detail.
+
+Then compare task success and total resource use under the same base model, tasks, tools, context limit, and total inference budget. Compare summary-based compaction, fixed structured edit operations, prompted JavaScript transformations, and an RL-trained policy. Summaries should also be allowed to organize knowledge and working practices, so the comparison measures the contribution of executable editing. Tasks should require earlier evidence, corrections, and learned practices across several compactions; shorter tasks can also test whether reorganization helps before the context window fills.
+
+Measure preservation of evidence and constraints, repeated mistakes, total tokens, latency, and actual cache use alongside task success. Retain the history, successive States, and generated transformations to trace later failures to earlier edits. Report training resources and cost weights separately. The [evaluation notes](docs/evaluation.md) develop this plan.
+
+### Related work
+
+[MemGPT](https://arxiv.org/abs/2310.08560) studies model-directed management of memory tiers; [AgentFold](https://arxiv.org/abs/2510.24699) condenses historical trajectories at different scales. Both motivate comparing what each interface can preserve and reorganize. [Context-Folding and FoldGRPO](https://arxiv.org/abs/2510.11967) study learning context management through branching and summarization; [FoldAct](https://arxiv.org/abs/2512.22733) addresses training when folding changes subsequent observations. They provide comparisons for learning the compaction policy, discussed further in the [related-work notes](docs/related-work.md).
+
+The contribution to investigate combines model-written code over structured context, direct preservation of existing material, and decisions informed by generation cost and cache reuse.
+
+### Running the prototype
 
 With Node.js 22 or later and pnpm 11.19.0, install dependencies and run the checks,
 
