@@ -10,11 +10,7 @@ Long-running agents must compact their context while preserving information need
 
 ## 1. Long-running agents and compaction
 
-As agents take on longer tasks, a single run can span hours or days. Throughout that run, user messages, model responses, tool calls, and tool results accumulate. We call this complete record the **history**, represented as a sequence of messages,
-
-$$
-H_t = (m_1, \ldots, m_t).
-$$
+As agents take on longer tasks, a single run can span hours or days. Throughout that run, user messages, model responses, tool calls, and tool results accumulate. We call this complete sequence of messages the **history**.
 
 At each invocation, the model receives a **context** $C_t$, also a sequence of messages, containing the information available for its next step. Early in a run, this context can include the entire history. As the run continues, the accumulated material can exceed the model’s context window.
 
@@ -44,23 +40,17 @@ The agent can bring the two results and their proofs together near the beginning
 
 *Green blocks mark established knowledge. Block heights are schematic and do not represent token counts.*
 
-The resulting context gives the agent an organized basis for further work. Established results are available together, reasons for abandoning earlier approaches remain accessible, and space is available for new exploration.
-
 As the agent continues, new work is appended to this context. It proves a third result and finds a generalization of the first. At the next compaction, it can incorporate the generalization alongside the original result, place the third result with the existing proofs, and update the next step.
 
 ![Second compaction: further work extends and revises the foundation while retaining the proofs.](assets/compaction-02.svg)
 
 Each compaction therefore edits a context that may already contain earlier edits. Material that remains useful can be preserved across these cycles, while new findings give the agent reasons to revise both its content and its organization. The context develops with the work.
 
-Our proposed mechanism lets the agent express these changes as code operating on the existing context. The next chapter explains how the agent can locate and transform that material while retaining selected content directly.
-
 ## 3. Editing context through code
 
 The agent harness stores context as structured items, including messages, function calls, and function outputs. We call this representation the **State**. The model receives a provider-specific representation of that context. Although it may not see the objects and fields stored by the harness, it can recognize the corresponding content and relationships.
 
 Our proposal is to give the model the State format and let it write code that locates and edits the material it understands. The harness executes that code and uses the resulting State as the context for the next invocation.
-
-To make this concrete, we first identify the types that the editing code will operate on, then work through a change to an existing State.
 
 ### State types
 
@@ -79,9 +69,9 @@ Function-call arguments are JSON strings. Function outputs can be strings or lis
 
 ### Working with an existing State
 
-Given this structure, how would we edit an existing State? Suppose it contains a web search for *Northbridge Observatory restoration*, and we want to retain only the results from the observatory's own website.
+Suppose the State contains a web search for *Northbridge Observatory restoration*. The custom search function returned four records as a JSON string, each with a title, URL, and excerpt. We want to retain the two records from the observatory's own website and explain the selection in a separate text part, preserving the JSON schema.
 
-For this example, a custom search function returns a JSON string containing four records in a `results` array. Two belong to the observatory's website. Each record contains a title, URL, and excerpt.
+The function below finds the search by its query, follows its `call_id` to the output, and filters the records by URL. The `results` field belongs to this tool's output format; State provides the surrounding item structure.
 
 ```ts
 type SearchResults = {
@@ -92,86 +82,52 @@ type SearchResults = {
   }[];
 };
 
-const items: State = state;
-```
-
-The `results` field belongs to this particular tool's output format. State provides the surrounding item structure. The [runnable example](examples/04-web-search/) demonstrates the same edit in the prototype's custom State format.
-
-### Find the search call
-
-We locate the earlier search by matching its query text.
-
-```ts
-const call = items.find((item): item is ResponseFunctionToolCall => {
-  if (item.type !== "function_call" || item.name !== "web_search") return false;
-  const args = JSON.parse(item.arguments);
-  return typeof args.query === "string" &&
-    /Northbridge Observatory.*restoration/i.test(args.query);
-});
-
-if (!call) throw new Error("Search call not found");
-```
-
-### Find the search result
-
-We read the identifier from that call and use it to locate the corresponding result.
-
-```ts
-const result = items.find(
-  (item): item is ResponseInputItem.FunctionCallOutput =>
-    item.type === "function_call_output" &&
-    item.call_id === call.call_id
-);
-
-if (!result) throw new Error("Search result not found");
-```
-
-### Keep the relevant records
-
-We parse the JSON string containing the search records, then use the tool's known output format to filter them by URL.
-
-```ts
-if (typeof result.output !== "string") throw new Error("Expected a JSON string");
-
-const data = JSON.parse(result.output) as SearchResults;
-
-if (!Array.isArray(data.results)) throw new Error("Search records not found");
-
-data.results = data.results.filter(record =>
-  /^https?:\/\/northbridge-observatory\.org(?:\/|$)/i.test(record.url)
-);
-```
-
-The retained records keep their original titles, URLs, and excerpts. Serializing the JSON again may change its whitespace and escaping, but preserves these string values.
-
-### Explain the edit
-
-We serialize the selected records and add a separate text part alongside them. This explains the selection while preserving the search result's JSON schema.
-
-```ts
-result.output = [
-  { type: "input_text", text: JSON.stringify(data) },
-  {
-    type: "input_text",
-    text: "Agent memory edit: retained the two results from the observatory's website."
-  }
-];
-```
-
-The edit uses the query text to find the search, the call relationship to find its result, and the URLs to select records. Array positions and call identifiers are resolved from the existing State.
-
-### Letting the agent write the transformation
-
-These steps can form the body of a function that receives State and returns the edited State.
-
-```ts
 function evolve(state: State): State {
-  // Locate the search, filter its results, and add the note.
+  // Find the search call and its output.
+  const call = state.find((item): item is ResponseFunctionToolCall => {
+    if (item.type !== "function_call" || item.name !== "web_search") return false;
+    const args = JSON.parse(item.arguments);
+    return typeof args.query === "string" &&
+      /Northbridge Observatory.*restoration/i.test(args.query);
+  });
+
+  if (!call) throw new Error("Search call not found");
+
+  const result = state.find(
+    (item): item is ResponseInputItem.FunctionCallOutput =>
+      item.type === "function_call_output" &&
+      item.call_id === call.call_id
+  );
+
+  if (!result) throw new Error("Search result not found");
+
+  // Keep records from the observatory's website.
+  if (typeof result.output !== "string") throw new Error("Expected a JSON string");
+
+  const data = JSON.parse(result.output) as SearchResults;
+
+  if (!Array.isArray(data.results)) throw new Error("Search records not found");
+
+  data.results = data.results.filter(record =>
+    /^https?:\/\/northbridge-observatory\.org(?:\/|$)/i.test(record.url)
+  );
+
+  // Preserve the JSON schema and explain the selection alongside it.
+  result.output = [
+    { type: "input_text", text: JSON.stringify(data) },
+    {
+      type: "input_text",
+      text: "Agent memory edit: retained the two results from the observatory's website."
+    }
+  ];
+
   return state;
 }
 ```
 
-We propose letting the agent write this function body and submit it through the `evolve` tool. The harness supplies the current State, executes the code on a copy, and validates the result before adopting it. If execution or validation fails, the previous State remains in place.
+The retained records keep their original titles, URLs, and excerpts. Serializing the JSON again may change its whitespace and escaping, but preserves these string values. The [runnable example](examples/04-web-search/) demonstrates the same edit in the prototype's custom State format.
+
+We propose letting the agent write this function body and submit it through the `evolve` tool.
 
 The generated function body describes the transformation $f_t$ from Chapter 1. The harness applies it to the structured representation of $C_t$, producing the State that represents $C'_t$.
 
@@ -217,7 +173,7 @@ $$
 
 For price-based weighting, $\alpha$ is the ratio of the corresponding token prices. Actual reuse also depends on the provider's caching behavior and cache availability.
 
-This metric accounts for generating the `evolve` call and processing the resulting input outside the reusable prefix. It excludes the input-processing cost of the model invocation that generates the call, cache reads, execution, and later inference. Those costs belong in the total task accounting. The metric is not a cost difference against a hypothetical continuation without compaction.
+The input cost of the invocation generating `evolve`, cache reads, execution, and later inference belong in total task accounting. Compaction Cost excludes these costs and is not a cost difference against continuing without compaction.
 
 ### Choosing the extent of an edit
 
@@ -225,11 +181,9 @@ Preserving existing material directly saves the output tokens needed to reproduc
 
 This gives the organization illustrated in Chapter 2 an additional motivation. Material expected to remain stable can be placed earlier in the context, with ongoing exploration appended afterward. Revising that earlier material may still be worthwhile when it improves subsequent work.
 
-Compaction Cost captures the immediate generation and uncached-input costs. Evaluating an edit requires following its effects through the rest of the task, including cache reads, execution, and subsequent inference. The agent must learn when an edit's benefit to continued work justifies its cost.
+Evaluating an edit requires following its effects on task performance and total resource use through the rest of the task.
 
 ## 5. Learning how to compact
-
-The `evolve` tool gives the agent a powerful way to edit its context. Choosing useful edits requires deciding what to preserve, revise, or remove, how often to compact, and when the benefit to further work justifies the cost.
 
 Compaction is already part of agent systems from providers such as Anthropic and OpenAI. Current systems use injected hints for compaction when the context is almost full. It might emerge that this timing is not preferable at all. We do not yet know which kind of compaction will work best.
 
@@ -237,11 +191,11 @@ We therefore deliberately give the agent broad control over its context and prop
 
 Structural validation constrains which results can be accepted, but an accepted edit can still discard useful evidence or introduce misleading information. The contents and organization of memory remain largely the agent’s choice. The annotation in Chapter 3 illustrates one way to explain a change; it is not a required convention.
 
-This openness allows training to discover effective approaches to compaction, including its timing, extent, and the structures or conventions it uses. These choices should develop through their consequences for continued work rather than be prescribed in advance.
+Memory structures and editing conventions should likewise emerge through training rather than be prescribed in advance.
 
 ## 6. Implementation and evaluation
 
-The repository provides a reference implementation of the editing mechanism. It executes transformations and validates their results. Evaluating the proposal requires establishing whether agents can use that mechanism reliably and whether their edits improve continued work.
+The repository provides a reference implementation of the editing mechanism. Evaluating the proposal requires establishing whether agents can use that mechanism reliably and whether their edits improve continued work.
 
 ### Reference implementation
 
@@ -284,7 +238,7 @@ Measure task success, preservation of evidence and constraints, repeated mistake
 
 [MemGPT](https://arxiv.org/abs/2310.08560) investigates model-directed management of memory tiers, while [AgentFold](https://arxiv.org/abs/2510.24699) condenses historical trajectories at different scales. These approaches motivate comparing what an agent can preserve and reorganize through each interface. [Context-Folding and FoldGRPO](https://arxiv.org/abs/2510.11967) study learning to manage context through branching and summarization; [FoldAct](https://arxiv.org/abs/2512.22733) addresses training when context folding changes subsequent observations. They provide relevant comparisons for training the compaction policy. The [related-work notes](docs/related-work.md) develop these connections further.
 
-The contribution to investigate is the combination of model-written code over structured context, direct preservation of existing material, and decisions informed by the cost of both generation and cache reuse. The reference implementation makes this mechanism concrete. Its reliability and benefits across long-running tasks remain to be established.
+The contribution to investigate is the combination of model-written code over structured context, direct preservation of existing material, and decisions informed by the cost of both generation and cache reuse.
 
 ---
 
