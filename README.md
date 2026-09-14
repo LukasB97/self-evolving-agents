@@ -12,15 +12,9 @@ Long-running agents must compact their context while preserving information need
 
 As agents take on longer tasks, a single run can span hours or days. Throughout that run, user messages, model responses, tool calls, and tool results accumulate. We call this complete sequence of messages the **history**.
 
-At each invocation, the model receives a **context** $C_t$, also a sequence of messages, containing the information available for its next step. Early in a run, this context can include the entire history. As the run continues, the accumulated material can exceed the model’s context window.
+At each invocation, the model receives a **context**, also a sequence of messages, containing the information available for its next step. Early in a run, this context can include the entire history. As the run continues, the accumulated material can exceed the model’s context window.
 
-**Compaction** transforms the current context into a smaller representation from which the agent can continue,
-
-$$
-C'_t = f_t(C_t).
-$$
-
-It can summarize earlier work, remove unnecessary material, and retain relevant details. The resulting context may therefore contain both original and rewritten messages. Its usefulness depends on preserving the information needed for subsequent work.
+**Compaction** transforms the current context into a smaller representation from which the agent can continue. It can summarize earlier work, remove unnecessary material, and retain relevant details. The resulting context may therefore contain both original and rewritten messages. Its usefulness depends on preserving the information needed for subsequent work.
 
 The compacted context becomes the basis for further model calls, leaving room for new information. The full history remains stored separately. Through repeated compactions, an agent can continue working beyond the amount of history that fits into a single context window.
 
@@ -127,9 +121,7 @@ function evolve(state: State): State {
 
 The retained records keep their original titles, URLs, and excerpts. Serializing the JSON again may change its whitespace and escaping, but preserves these string values. The [runnable example](examples/04-web-search/) demonstrates the same edit in the prototype's custom State format.
 
-We propose letting the agent write this function body and submit it through the `evolve` tool.
-
-The generated function body describes the transformation $f_t$ from Chapter 1. The harness applies it to the structured representation of $C_t$, producing the State that represents $C'_t$.
+We propose letting the agent write this function body and submit it through the `evolve` tool. It expresses the compaction described in Chapter 1: the harness transforms the current State into the State representing the compacted context.
 
 The model can formulate these operations using content and relationships it recognizes in its context. It does not need to reconstruct the entire State or know stored positions and identifiers in advance. It generates the transformation code and any new text, while retained material comes directly from the existing State.
 
@@ -155,25 +147,18 @@ The agent can call `evolve` during its work. The harness can also request a comp
 
 An edit has two immediate token costs. The agent generates the `evolve` call, including its code and any new content. The next model invocation then processes the resulting context.
 
-Prompt caching can reuse computation for an unchanged beginning of the model input. Under an exact-prefix cache, an edit breaks reuse beyond the first changed position, even if later material remains identical. We call the number of resulting input tokens outside the reusable prefix the **Cache Cost**.
+Prompt caching can reuse computation for an unchanged beginning of the model input. Under an exact-prefix cache, an edit breaks reuse beyond the first changed position, even if later material remains identical. Compare the complete serialized and tokenized model inputs before and after the edit, including system instructions and tool definitions. Their longest identical initial token sequence is the reusable prefix.
 
-Let $I(C)$ denote the complete serialized and tokenized model input for context $C$, including system instructions and tool definitions. Under an exact-prefix model,
+**Cache Cost** counts the tokens in the new input outside that prefix. **Compaction Cost** adds the cost of generating the `evolve` call, including its code and new content:
 
-$$
-\mathrm{CacheCost}(C_t, C'_t) = |I(C'_t)| - \mathrm{LCP}\!\left(I(C_t), I(C'_t)\right).
-$$
+```text
+Cache Cost = tokens in the new input − tokens in the reusable prefix
+Compaction Cost = generated evolve-call tokens × output-token weight + Cache Cost
+```
 
-Here, $|I(C)|$ is the number of input tokens and $\mathrm{LCP}$ is the length of the longest common prefix of the two token sequences.
+The output-token weight expresses the cost of one output token relative to one uncached input token. For price-based weighting, divide the output-token price by the uncached-input-token price. Compaction Cost is therefore expressed in input-token equivalents. Actual reuse also depends on the provider's caching behavior and cache availability.
 
-To combine this with the cost of generating the edit, let $\alpha$ weight an output token relative to an uncached input token. **Compaction Cost**, expressed in input-token equivalents, is then
-
-$$
-\text{Compaction Cost} = \alpha \cdot \text{evolveCallTokens} + \text{Cache Cost}.
-$$
-
-For price-based weighting, $\alpha$ is the ratio of the corresponding token prices. Actual reuse also depends on the provider's caching behavior and cache availability.
-
-The input cost of the invocation generating `evolve`, cache reads, execution, and later inference belong in total task accounting. Compaction Cost excludes these costs and is not a cost difference against continuing without compaction.
+This measure excludes the input-processing cost of the invocation generating `evolve`, cache reads, execution, and later inference. Those belong in total task accounting. It is not a cost difference against continuing without compaction. The [design notes](docs/design.md#cache-accounting) describe the implementation and integration requirements.
 
 ### Choosing the extent of an edit
 
@@ -195,17 +180,25 @@ Memory structures and editing conventions should likewise emerge through trainin
 
 ## 6. Implementation and evaluation
 
-The repository provides a reference implementation of the editing mechanism. Evaluating the proposal requires establishing whether agents can use that mechanism reliably and whether their edits improve continued work.
+The reference implementation executes JavaScript in QuickJS with bounded time and memory and no external access. It checks the resulting State and tool-call relationships before accepting a replacement; failed edits leave the previous State intact. Four hand-written examples demonstrate [shortening an explanation](examples/01-selective-compression/), [selecting exact evidence](examples/02-annotated-evidence/), [consolidating a corrected task](examples/03-current-task/), and [the web-search edit from Chapter 3](examples/04-web-search/). Automated checks cover execution, validation, failure isolation, cache-prefix arithmetic, and reproduction of these examples.
 
-### Reference implementation
+The prototype has no live provider adapter, trained compaction policy, or measured agent-performance results. Its custom [State format](src/state.ts) differs from the OpenAI types in Chapter 3, and the [validator](src/validate-state.ts) requires JSON-compatible values to preserve data across the execution boundary. A provider integration must establish the correspondence between State and model-visible context and supply token and cache measurements. The [design notes](docs/design.md) describe the execution and integration requirements.
 
-The prototype executes JavaScript in QuickJS with bounded time and memory and no external access. It checks the returned State and its tool-call relationships before accepting a replacement. Failed edits leave the previous State intact.
+### Evaluation
 
-Four hand-written examples demonstrate [shortening an explanation](examples/01-selective-compression/), [selecting exact evidence](examples/02-annotated-evidence/), [consolidating a corrected task](examples/03-current-task/), and [the web-search edit from Chapter 3](examples/04-web-search/). Automated checks cover execution, validation, failure isolation, cache-prefix arithmetic, and reproduction of those examples.
+First, use controlled tasks to test whether the model translates its understanding of context into edits of the intended State values: locating the correct tool call, selecting records, preserving exact passages, and retaining required relationships. Include similar queries, repeated content, and later corrections so that the first matching string is not necessarily the right target. Measure structural validity and correct targeting separately; a valid edit can still change the wrong result or remove a necessary detail.
 
-The implementation currently has no live provider adapter, trained compaction policy, or measured agent-performance results. A provider integration must establish the correspondence between State and model-visible context and supply token and cache measurements.
+Then compare task success and total resource use under the same base model, tasks, tools, context limit, and total inference budget. Compare summary-based compaction, fixed structured edit operations, prompted JavaScript transformations, and an RL-trained policy. Summaries should also be allowed to organize knowledge and working practices, so the comparison measures the contribution of executable editing. Tasks should require earlier evidence, corrections, and learned practices across several compactions; shorter tasks can also test whether reorganization helps before the context window fills.
 
-The [implementation types](src/state.ts) still use the prototype's custom format rather than the OpenAI types used in Chapter 3. The [validator](src/validate-state.ts) additionally requires JSON-compatible values so that State can cross the execution boundary without losing data. The [design notes](docs/design.md) describe the execution and integration requirements.
+Measure preservation of evidence and constraints, repeated mistakes, total tokens, latency, and actual cache use alongside task success. Retain the history, successive States, and generated transformations to trace later failures to earlier edits. Report training resources and cost weights separately. The [evaluation notes](docs/evaluation.md) develop this plan.
+
+### Related work
+
+[MemGPT](https://arxiv.org/abs/2310.08560) studies model-directed management of memory tiers; [AgentFold](https://arxiv.org/abs/2510.24699) condenses historical trajectories at different scales. Both motivate comparing what each interface can preserve and reorganize. [Context-Folding and FoldGRPO](https://arxiv.org/abs/2510.11967) study learning context management through branching and summarization; [FoldAct](https://arxiv.org/abs/2512.22733) addresses training when folding changes subsequent observations. They provide comparisons for learning the compaction policy, discussed further in the [related-work notes](docs/related-work.md).
+
+The contribution to investigate combines model-written code over structured context, direct preservation of existing material, and decisions informed by generation cost and cache reuse.
+
+### Running the prototype
 
 With Node.js 22 or later and pnpm 11.19.0, install dependencies and run the checks,
 
@@ -214,31 +207,7 @@ pnpm install --frozen-lockfile
 pnpm check
 ```
 
-Run `pnpm examples` to execute just the four examples.
-
-### Reliable editing
-
-The first evaluation question is whether the model can translate its understanding of context into edits of the intended State values.
-
-Controlled tasks can test whether it locates the correct tool call, selects the intended records, preserves exact passages, and keeps required relationships intact. These tasks should include similar search queries, repeated content, and later corrections, so that identifying the right material requires more than finding the first matching string.
-
-Structural validity and correct targeting should be measured separately. An edit can produce a valid State while changing the wrong result or removing a necessary detail.
-
-### Benefits across continued work
-
-The second question is whether these edits improve task completion at a worthwhile total cost. Comparisons should use the same base model, tasks, tools, context limit, and total inference budget.
-
-Relevant comparisons include summary-based compaction, fixed structured edit operations, prompted JavaScript transformations, and an RL-trained compaction policy. Summary-based methods should be allowed to organize knowledge and working practices, so that evaluation measures the contribution of executable editing itself.
-
-Tasks should require earlier evidence, corrections, and learned practices across several compactions. Shorter tasks can also test whether context reorganization helps before the context window fills.
-
-Measure task success, preservation of evidence and constraints, repeated mistakes, total tokens, latency, and actual cache use. Retain the history, successive States, and generated transformations so that later failures can be traced to earlier edits. Training resources and cost weights should be reported separately.
-
-### Relation to existing work
-
-[MemGPT](https://arxiv.org/abs/2310.08560) investigates model-directed management of memory tiers, while [AgentFold](https://arxiv.org/abs/2510.24699) condenses historical trajectories at different scales. These approaches motivate comparing what an agent can preserve and reorganize through each interface. [Context-Folding and FoldGRPO](https://arxiv.org/abs/2510.11967) study learning to manage context through branching and summarization; [FoldAct](https://arxiv.org/abs/2512.22733) addresses training when context folding changes subsequent observations. They provide relevant comparisons for training the compaction policy. The [related-work notes](docs/related-work.md) develop these connections further.
-
-The contribution to investigate is the combination of model-written code over structured context, direct preservation of existing material, and decisions informed by the cost of both generation and cache reuse.
+Run `pnpm examples` to execute just the four [examples](examples/).
 
 ---
 
